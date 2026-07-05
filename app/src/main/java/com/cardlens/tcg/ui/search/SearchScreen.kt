@@ -72,10 +72,12 @@ import com.cardlens.tcg.model.primaryPrice
 import com.cardlens.tcg.ui.components.CardGridItem
 import com.cardlens.tcg.ui.components.EmptyState
 import com.cardlens.tcg.ui.components.GameFilterRow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 enum class SearchSort(val label: String) {
@@ -191,6 +193,10 @@ class SearchViewModel(
                     repository.search(q, game.value)
                 }
             }
+            // Wurde diese Suche durch eine neuere abgeloest (Tab-/Query-Wechsel),
+            // darf sie den State nicht mehr ueberschreiben — sonst erscheint ein
+            // falscher "Netzwerkfehler" aus der geschluckten CancellationException.
+            if (!isActive || result.exceptionOrNull() is CancellationException) return@launch
             rawResults = result.getOrDefault(emptyList())
             recentSearches.value = (listOf(q) + recentSearches.value.filter { it != q }).take(8)
             state.value = when {

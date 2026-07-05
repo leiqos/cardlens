@@ -1,9 +1,12 @@
 package com.cardlens.tcg.data
 
+import com.cardlens.tcg.data.remote.DragonBallService
 import com.cardlens.tcg.data.remote.LorcastService
 import com.cardlens.tcg.data.remote.OnePieceCatalog
 import com.cardlens.tcg.data.remote.PokemonService
+import com.cardlens.tcg.data.remote.RiftboundService
 import com.cardlens.tcg.data.remote.ScryfallService
+import com.cardlens.tcg.data.remote.SwuService
 import com.cardlens.tcg.data.remote.YgoService
 import com.cardlens.tcg.data.remote.toTcgCard
 import com.cardlens.tcg.model.CardIdentifier
@@ -21,7 +24,10 @@ class CardRepository(
     private val pokemon: PokemonService,
     private val ygo: YgoService,
     private val lorcast: LorcastService,
-    private val onePiece: OnePieceCatalog
+    private val onePiece: OnePieceCatalog,
+    private val swu: SwuService,
+    private val dragonBall: DragonBallService,
+    private val riftbound: RiftboundService
 ) {
     /** In-Memory-Cache, damit die Detailansicht ohne erneuten API-Call funktioniert. */
     private val cache = ConcurrentHashMap<String, TcgCard>()
@@ -74,6 +80,16 @@ class CardRepository(
         }
         cards.forEach(::remember)
         return cards
+    }
+
+    /**
+     * Vollstaendige Riftbound-Karte (Werte, Text, grosses Bild). Die Suche
+     * liefert nur Typeahead-Daten; das Detail wird hiermit nachgeladen.
+     */
+    suspend fun riftboundDetail(cardId: String): TcgCard? = try {
+        riftbound.byId(cardId).toTcgCard().also(::remember)
+    } catch (e: HttpException) {
+        if (e.code() in intArrayOf(400, 404)) null else throw e
     }
 
     /** Offizielle Rulings einer Magic-Karte (Scryfall-UUID). */
@@ -165,10 +181,15 @@ class CardRepository(
             TcgGame.YUGIOH -> ygo.search(query).data.map { it.toTcgCard() }
             TcgGame.ONEPIECE -> onePiece.search(query)
             TcgGame.LORCANA -> lorcast.search(query).results.map { it.toTcgCard() }
+            TcgGame.STARWARS -> swu.search(query).data.map { it.toTcgCard() }
+            TcgGame.DRAGONBALL -> dragonBall.search(query).all.mapNotNull { it.toTcgCard() }
+            TcgGame.RIFTBOUND -> riftbound.search(query).map { it.toTcgCard() }
         }
     } catch (e: HttpException) {
-        // Scryfall liefert 404, YGOPRODeck 400, wenn nichts gefunden wurde.
-        if (e.code() == 404 || e.code() == 400) emptyList() else throw e
+        // Viele der freien APIs liefern 400/404/401/403/422, wenn nichts gefunden
+        // wurde, der optionale Key fehlt (apitcg) oder ein Parameter ausserhalb
+        // des erlaubten Bereichs liegt — dann leeres Ergebnis statt Fehler.
+        if (e.code() in intArrayOf(400, 401, 403, 404, 422)) emptyList() else throw e
     }
 
     private companion object {

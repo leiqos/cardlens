@@ -40,6 +40,26 @@ fun colorFor(symbol: String): Color = when (symbol.uppercase()) {
     "RUBY" -> Color(0xFFD3405B)
     "SAPPHIRE" -> Color(0xFF3A7CC6)
     "STEEL" -> Color(0xFF8D99A6)
+    // Star Wars: Unlimited — Aspekte
+    "VIGILANCE" -> Color(0xFF3A7CC6)
+    "COMMAND" -> Color(0xFF3E9C5C)
+    "AGGRESSION" -> Color(0xFFD3405B)
+    "CUNNING" -> Color(0xFFE8C24B)
+    "HEROISM" -> Color(0xFFEDE7D0)
+    "VILLAINY" -> Color(0xFF3A3540)
+    // Dragon Ball Fusion World — Farben
+    "RED" -> Color(0xFFD3405B)
+    "BLUE" -> Color(0xFF3A7CC6)
+    "GREEN" -> Color(0xFF3E9C5C)
+    "YELLOW" -> Color(0xFFE8C24B)
+    "BLACK" -> Color(0xFF3A3540)
+    // Riftbound — Fraktionen/Domains
+    "CHAOS" -> Color(0xFFD3405B)
+    "ORDER" -> Color(0xFFEDE7D0)
+    "FURY" -> Color(0xFFE07A3A)
+    "CALM" -> Color(0xFF3A7CC6)
+    "MIND" -> Color(0xFF9D5CC3)
+    "BODY" -> Color(0xFF3E9C5C)
     else -> Color(0xFF8D99A6)
 }
 

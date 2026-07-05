@@ -49,7 +49,10 @@ private val dataSources = listOf(
     DataSource("Pokémon TCG API", "Pokémon", "https://pokemontcg.io"),
     DataSource("YGOPRODeck", "Yu-Gi-Oh!", "https://ygoprodeck.com"),
     DataSource("OPTCG API", "One Piece Card Game", "https://optcgapi.com"),
-    DataSource("Lorcast", "Disney Lorcana", "https://lorcast.com")
+    DataSource("Lorcast", "Disney Lorcana", "https://lorcast.com"),
+    DataSource("SWU-DB", "Star Wars: Unlimited", "https://www.swu-db.com"),
+    DataSource("apitcg.com", "Dragon Ball Fusion World (Key nötig)", "https://apitcg.com"),
+    DataSource("RiftScribe", "Riftbound (LoL)", "https://riftscribe.gg")
 )
 
 @Composable

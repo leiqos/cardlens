@@ -61,6 +61,10 @@ enum class DeckFormat(val game: TcgGame, val label: String, val legalityKey: Str
     YGO_ADVANCED(TcgGame.YUGIOH, "Advanced", null),
     ONEPIECE_STANDARD(TcgGame.ONEPIECE, "Standard", null),
     LORCANA_CORE(TcgGame.LORCANA, "Core Constructed", null),
+    SWU_PREMIER(TcgGame.STARWARS, "Premier", null),
+    SWU_TWIN_SUNS(TcgGame.STARWARS, "Twin Suns", null),
+    DB_STANDARD(TcgGame.DRAGONBALL, "Standard", null),
+    RIFTBOUND_STANDARD(TcgGame.RIFTBOUND, "Standard", null),
     CASUAL(TcgGame.MAGIC, "Casual / Frei", null);
 
     companion object {

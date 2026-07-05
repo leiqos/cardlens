@@ -147,6 +147,11 @@ class DetailViewModel(
                 printings.value = runCatching { repository.ygoPrintings(passcode) }
                     .getOrDefault(emptyList())
             }
+            TcgGame.RIFTBOUND -> viewModelScope.launch {
+                // Suchtreffer sind nur Typeahead — vollstaendige Karte nachladen.
+                runCatching { repository.riftboundDetail(c.apiId) }.getOrNull()
+                    ?.let { card.value = it }
+            }
             else -> Unit
         }
     }

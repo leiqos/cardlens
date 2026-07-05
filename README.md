@@ -10,12 +10,12 @@
   <img src="https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?logo=android&logoColor=white" alt="Android 8.0+"/>
   <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin 2.0"/>
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose"/>
-  <img src="https://img.shields.io/badge/TCGs-5-4ED8C3" alt="5 TCGs"/>
+  <img src="https://img.shields.io/badge/TCGs-8-4ED8C3" alt="8 TCGs"/>
 </p>
 
 **Der komplette Sammlungs-Manager für TCG-Karten** – scannen, verwalten, Decks bauen,
 tauschen und Marktpreise verfolgen. Für Magic: The Gathering, Pokémon, Yu-Gi-Oh!,
-One Piece und Disney Lorcana.
+One Piece, Disney Lorcana, Star Wars: Unlimited, Dragon Ball Fusion World und Riftbound (LoL).
 
 Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 
@@ -28,6 +28,10 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 | Deck | Deck-Statistik | Scanner |
 |:---:|:---:|:---:|
 | ![Deck](assets/screenshots/deck.png) | ![Statistik](assets/screenshots/deck_stats.png) | ![Scanner](assets/screenshots/scanner.png) |
+
+| Star Wars: Unlimited | Riftbound (LoL) |
+|:---:|:---:|
+| ![Star Wars](assets/screenshots/starwars.png) | ![Riftbound](assets/screenshots/riftbound.png) |
 
 ## Features
 
@@ -65,7 +69,7 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 - Deck-Wert, Teilen/Export als Text-Deckliste.
 
 ### 🔍 Suche & Karten-Details
-- Live-Suche über alle fünf TCGs parallel, **Namensvorschläge** (Scryfall-Autocomplete),
+- Live-Suche über alle acht TCGs parallel, **Namensvorschläge** (Scryfall-Autocomplete),
   zuletzt gesuchte Begriffe.
 - **Erweiterte Filter** (Magic): Farben, Kartentyp, Seltenheit, Format-legal, Max-Preis.
 - Sortierung nach Relevanz, Preis oder Name.
@@ -99,6 +103,9 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 | Yu-Gi-Oh! | [YGOPRODeck](https://ygoprodeck.com/api-guide/) | Nein |
 | One Piece | [OPTCG API](https://optcgapi.com) | Nein |
 | Disney Lorcana | [Lorcast](https://lorcast.com/docs/api) | Nein |
+| Star Wars: Unlimited | [SWU-DB](https://www.swu-db.com/api) | Nein |
+| Dragon Ball Fusion World | [apitcg.com](https://apitcg.com) | **Ja** (kostenlos) |
+| Riftbound (LoL) | [RiftScribe](https://riftscribe.gg/api-docs) | Nein |
 
 Hinweis One Piece: Die OPTCG API bietet keine Namenssuche, daher baut die App beim
 ersten One-Piece-Zugriff einmalig pro Sitzung einen lokalen Suchindex über alle
@@ -106,6 +113,13 @@ Sets und Starter-Decks auf.
 
 Optionaler Pokémon-API-Key: in `gradle.properties` bei `POKEMON_API_KEY=` eintragen
 (kostenlos auf https://dev.pokemontcg.io).
+
+Dragon Ball Fusion World nutzt [apitcg.com](https://apitcg.com), das einen kostenlosen
+API-Key verlangt: in `gradle.properties` bei `DRAGONBALL_API_KEY=` eintragen. Ohne Key
+bleibt nur die Dragon-Ball-Suche leer, alle anderen Spiele funktionieren normal.
+
+RiftScribe (Riftbound) liefert Kartendaten und Bilder, aber keine Preise;
+Star-Wars- und Riftbound-Suche kommen ohne Key aus.
 
 ## Bauen & Starten
 

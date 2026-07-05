@@ -14,11 +14,14 @@ import com.cardlens.tcg.data.local.DeckDao
 import com.cardlens.tcg.data.local.FavoriteDao
 import com.cardlens.tcg.data.local.ValueSnapshot
 import com.cardlens.tcg.data.local.ValueSnapshotDao
+import com.cardlens.tcg.data.remote.DragonBallService
 import com.cardlens.tcg.data.remote.LorcastService
 import com.cardlens.tcg.data.remote.OnePieceApi
 import com.cardlens.tcg.data.remote.OnePieceCatalog
 import com.cardlens.tcg.data.remote.PokemonService
+import com.cardlens.tcg.data.remote.RiftboundService
 import com.cardlens.tcg.data.remote.ScryfallService
+import com.cardlens.tcg.data.remote.SwuService
 import com.cardlens.tcg.data.remote.YgoService
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.variantPrice
@@ -77,6 +80,10 @@ class AppContainer(context: Context) {
             if (BuildConfig.POKEMON_API_KEY.isNotBlank() && host == "api.pokemontcg.io") {
                 builder.header("X-Api-Key", BuildConfig.POKEMON_API_KEY)
             }
+            // apitcg.com (Dragon Ball Fusion World) verlangt einen optionalen Key.
+            if (BuildConfig.DRAGONBALL_API_KEY.isNotBlank() && host == "apitcg.com") {
+                builder.header("x-api-key", BuildConfig.DRAGONBALL_API_KEY)
+            }
             chain.proceed(builder.build())
         }
         .build()
@@ -104,7 +111,10 @@ class AppContainer(context: Context) {
         pokemon = retrofit(PokemonService.BASE_URL).create(PokemonService::class.java),
         ygo = retrofit(YgoService.BASE_URL).create(YgoService::class.java),
         lorcast = retrofit(LorcastService.BASE_URL).create(LorcastService::class.java),
-        onePiece = onePieceCatalog
+        onePiece = onePieceCatalog,
+        swu = retrofit(SwuService.BASE_URL).create(SwuService::class.java),
+        dragonBall = retrofit(DragonBallService.BASE_URL).create(DragonBallService::class.java),
+        riftbound = retrofit(RiftboundService.BASE_URL).create(RiftboundService::class.java)
     )
 
     private val database: AppDatabase = Room.databaseBuilder(

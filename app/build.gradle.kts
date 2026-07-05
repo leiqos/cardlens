@@ -14,11 +14,14 @@ android {
         applicationId = "com.cardlens.tcg"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.0.0"
+        versionCode = 4
+        versionName = "2.1.0"
 
         val pokemonKey = providers.gradleProperty("POKEMON_API_KEY").orNull ?: ""
         buildConfigField("String", "POKEMON_API_KEY", "\"$pokemonKey\"")
+
+        val dragonballKey = providers.gradleProperty("DRAGONBALL_API_KEY").orNull ?: ""
+        buildConfigField("String", "DRAGONBALL_API_KEY", "\"$dragonballKey\"")
     }
 
     buildTypes {

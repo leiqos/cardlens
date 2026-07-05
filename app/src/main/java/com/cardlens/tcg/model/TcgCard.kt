@@ -9,7 +9,10 @@ enum class TcgGame(val label: String, val shortLabel: String) {
     POKEMON("Pokémon TCG", "Pokémon"),
     YUGIOH("Yu-Gi-Oh!", "Yu-Gi-Oh!"),
     ONEPIECE("One Piece Card Game", "One Piece"),
-    LORCANA("Disney Lorcana", "Lorcana")
+    LORCANA("Disney Lorcana", "Lorcana"),
+    STARWARS("Star Wars: Unlimited", "Star Wars"),
+    DRAGONBALL("Dragon Ball Fusion World", "Dragon Ball"),
+    RIFTBOUND("Riftbound (LoL)", "Riftbound")
 }
 
 @Serializable
@@ -71,7 +74,9 @@ data class TcgCard(
                 "Pokémon", "Trainer", "Energy",
                 "Monster", "Spell", "Trap",
                 "Character", "Leader", "Event", "Stage",
-                "Action", "Item", "Song", "Location"
+                "Action", "Item", "Song", "Location",
+                // Star Wars: Unlimited / Riftbound / Dragon Ball
+                "Unit", "Base", "Upgrade", "Extra", "Rune", "Legend", "Gear", "Spell"
             )
             return known.firstOrNull { line.contains(it, ignoreCase = true) }
                 ?: line.trim().split(' ').lastOrNull().orEmpty().ifEmpty { "Sonstige" }
