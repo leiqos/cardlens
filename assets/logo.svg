@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 220" width="760" height="220">
+  <defs>
+    <linearGradient id="cardFront" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#A38BFF"/>
+      <stop offset="1" stop-color="#6A4BE8"/>
+    </linearGradient>
+    <linearGradient id="cardMid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6C55C8"/>
+      <stop offset="1" stop-color="#4E3B9E"/>
+    </linearGradient>
+    <linearGradient id="cardBack" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#463A85"/>
+      <stop offset="1" stop-color="#332A61"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#63E8D2"/>
+      <stop offset="1" stop-color="#2FB9A3"/>
+    </linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9B82FF"/>
+      <stop offset="1" stop-color="#4ED8C3"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- Bildmarke: gefaecherte Karten + Scan-Klammern + Lupe -->
+  <g transform="translate(30,20)">
+    <!-- Karten-Faecher -->
+    <g filter="url(#soft)">
+      <g transform="rotate(-16 85 95)">
+        <rect x="55" y="42" width="62" height="88" rx="9" fill="url(#cardBack)"/>
+      </g>
+      <g transform="rotate(-8 88 95)">
+        <rect x="58" y="38" width="64" height="92" rx="9" fill="url(#cardMid)"/>
+      </g>
+      <g>
+        <rect x="62" y="34" width="66" height="96" rx="9" fill="url(#cardFront)"/>
+        <rect x="70" y="44" width="50" height="36" rx="4" fill="#FFFFFF" opacity="0.24"/>
+        <rect x="70" y="90" width="42" height="6" rx="3" fill="#FFFFFF" opacity="0.32"/>
+        <rect x="70" y="102" width="30" height="6" rx="3" fill="#FFFFFF" opacity="0.32"/>
+      </g>
+    </g>
+
+    <!-- Scan-Klammern -->
+    <g fill="none" stroke="#4ED8C3" stroke-width="9" stroke-linecap="round">
+      <path d="M34,52 v-14 a10,10 0 0 1 10,-10 h14"/>
+      <path d="M156,52 v-14 a10,10 0 0 0 -10,-10 h-14"/>
+      <path d="M34,124 v14 a10,10 0 0 0 10,10 h14"/>
+    </g>
+
+    <!-- Lupe -->
+    <circle cx="128" cy="106" r="26" fill="#FFFFFF" opacity="0.16"/>
+    <circle cx="128" cy="106" r="26" fill="none" stroke="url(#lens)" stroke-width="10"/>
+    <line x1="147.5" y1="125.5" x2="166" y2="144" stroke="#2FB9A3" stroke-width="13" stroke-linecap="round"/>
+    <path d="M112,98 a17,17 0 0 1 10,-9.5" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity="0.75"/>
+  </g>
+
+  <!-- Wortmarke -->
+  <g font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="250" y="122" font-size="76" font-weight="800" letter-spacing="-1">
+      <tspan fill="url(#word)">CardLens</tspan>
+    </text>
+    <text x="254" y="162" font-size="24" font-weight="500" fill="#8A8798" letter-spacing="0.5">
+      Scannen · Sammeln · Decks · Preise — für 5 TCGs
+    </text>
+  </g>
+</svg>

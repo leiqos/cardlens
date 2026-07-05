@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Hintere Karte (nach links gefaechert) -->
+    <group
+        android:rotation="-16"
+        android:pivotX="52"
+        android:pivotY="56">
+        <path android:pathData="M38,31 h24 a5,5 0 0 1 5,5 v38 a5,5 0 0 1 -5,5 h-24 a5,5 0 0 1 -5,-5 v-38 a5,5 0 0 1 5,-5 z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="33" android:startY="31"
+                    android:endX="67" android:endY="79"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#463A85" />
+                    <item android:offset="1" android:color="#332A61" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+
+    <!-- Mittlere Karte -->
+    <group
+        android:rotation="-8"
+        android:pivotX="53"
+        android:pivotY="56">
+        <path android:pathData="M39,30 h25 a5,5 0 0 1 5,5 v39 a5,5 0 0 1 -5,5 h-25 a5,5 0 0 1 -5,-5 v-39 a5,5 0 0 1 5,-5 z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="34" android:startY="30"
+                    android:endX="69" android:endY="79"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#6C55C8" />
+                    <item android:offset="1" android:color="#4E3B9E" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+
+    <!-- Vordere Karte -->
+    <group
+        android:rotation="0"
+        android:pivotX="54"
+        android:pivotY="56">
+        <path android:pathData="M41,28 h26 a5,5 0 0 1 5,5 v41 a5,5 0 0 1 -5,5 h-26 a5,5 0 0 1 -5,-5 v-41 a5,5 0 0 1 5,-5 z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="36" android:startY="28"
+                    android:endX="72" android:endY="79"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#A38BFF" />
+                    <item android:offset="1" android:color="#6A4BE8" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <!-- Artwork-Fenster -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.24"
+            android:pathData="M41,33 h26 a2,2 0 0 1 2,2 v15 a2,2 0 0 1 -2,2 h-26 a2,2 0 0 1 -2,-2 v-15 a2,2 0 0 1 2,-2 z" />
+        <!-- Textzeilen -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.32"
+            android:pathData="M41,57 h22 a1.6,1.6 0 0 1 0,3.2 h-22 a1.6,1.6 0 0 1 0,-3.2 z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.32"
+            android:pathData="M41,63 h15 a1.6,1.6 0 0 1 0,3.2 h-15 a1.6,1.6 0 0 1 0,-3.2 z" />
+    </group>
+
+    <!-- Scan-Klammern (3 Ecken — die vierte gehoert der Lupe) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#4ED8C3"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:pathData="M28,36 v-6 a4,4 0 0 1 4,-4 h6" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#4ED8C3"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:pathData="M80,36 v-6 a4,4 0 0 0 -4,-4 h-6" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#4ED8C3"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:pathData="M28,72 v6 a4,4 0 0 0 4,4 h6" />
+
+    <!-- Lupe: Glas ueber der Kartenecke -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.16"
+        android:pathData="M66,54 m-12.5,0 a12.5,12.5 0 1 1 25,0 a12.5,12.5 0 1 1 -25,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeWidth="5"
+        android:pathData="M66,54 m-12.5,0 a12.5,12.5 0 1 1 25,0 a12.5,12.5 0 1 1 -25,0">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="53.5" android:startY="41.5"
+                android:endX="78.5" android:endY="66.5"
+                android:type="linear">
+                <item android:offset="0" android:color="#63E8D2" />
+                <item android:offset="1" android:color="#2FB9A3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Griff -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2FB9A3"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M75.5,63.5 L84,72" />
+    <!-- Glanzlicht im Glas -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.75"
+        android:pathData="M58.5,50 a8.5,8.5 0 0 1 5,-4.6" />
+</vector>
