@@ -93,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardlens.tcg.CardLensApp
+import com.cardlens.tcg.scan.PerceptualHash
 import com.cardlens.tcg.model.CardIdentifierDetector
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.formatPrice
@@ -119,6 +120,29 @@ private suspend fun Context.cameraProvider(): ProcessCameraProvider =
         future.addListener({ cont.resume(future.get()) }, ContextCompat.getMainExecutor(this))
     }
 
+/**
+ * Schneidet aus dem Analysebild die Kartenregion heraus — dieselbe Geometrie
+ * wie der angezeigte Zielrahmen (74 % Breite, Seitenverhaeltnis 63:88, leicht
+ * nach oben versetzt). So bezieht sich der Perceptual Hash auf die Karte selbst
+ * und nicht auf Hintergrund.
+ */
+private fun cropCardRegion(src: Bitmap): Bitmap {
+    val w = src.width
+    val h = src.height
+    if (w <= 0 || h <= 0) return src
+    var cropW = w * 0.74f
+    var cropH = cropW * 88f / 63f
+    if (cropH > h * 0.92f) {
+        cropH = h * 0.92f
+        cropW = cropH * 63f / 88f
+    }
+    val left = ((w - cropW) / 2f).coerceIn(0f, w - 1f)
+    val top = ((h - cropH) / 2f - h * 0.05f).coerceIn(0f, h - 1f)
+    val cw = cropW.coerceAtMost(w - left).toInt().coerceAtLeast(1)
+    val ch = cropH.coerceAtMost(h - top).toInt().coerceAtLeast(1)
+    return Bitmap.createBitmap(src, left.toInt(), top.toInt(), cw, ch)
+}
+
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
@@ -128,6 +152,7 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
             app.container.repository,
             app.container.collectionDao,
             app.container.cardJson,
+            app.container.cardImageMatcher,
             app.container.settings
         )
     }
@@ -221,6 +246,14 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
             } else {
                 raw
+            }
+
+            // Visueller Fingerabdruck der Kartenregion (Perceptual Hash) —
+            // Grundlage des Editions-Abgleichs beim Treffer.
+            runCatching {
+                val cardCrop = cropCardRegion(upright)
+                viewModel.submitFingerprint(PerceptualHash.fingerprint(cardCrop))
+                if (cardCrop != upright) cardCrop.recycle()
             }
 
             // Pass 1: Vollbild — Kartenname + gut lesbare Kennungen

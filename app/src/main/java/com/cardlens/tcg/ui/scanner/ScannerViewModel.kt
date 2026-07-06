@@ -10,6 +10,8 @@ import com.cardlens.tcg.model.CardIdentifier
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.TcgGame
 import com.cardlens.tcg.model.primaryPrice
+import com.cardlens.tcg.scan.CardImageMatcher
+import com.cardlens.tcg.scan.PerceptualHash
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,8 +39,21 @@ class ScannerViewModel(
     private val repository: CardRepository,
     private val dao: CollectionDao,
     private val json: Json,
+    private val matcher: CardImageMatcher,
     val settings: SettingsStore
 ) : ViewModel() {
+
+    /**
+     * Fingerabdruck der zuletzt im Rahmen gesehenen Karte (Perceptual Hash).
+     * Wird pro Kamerabild aktualisiert und beim Treffer genutzt, um aus
+     * mehreren Druck-Kandidaten den visuell passenden auszuwaehlen.
+     */
+    @Volatile
+    private var lastFingerprint: PerceptualHash.Fingerprint? = null
+
+    fun submitFingerprint(fingerprint: PerceptualHash.Fingerprint) {
+        lastFingerprint = fingerprint
+    }
 
     // --- Stapel-Scan (Session wie bei ManaBox) ---
     val batchMode = MutableStateFlow(false)
@@ -281,16 +296,40 @@ class ScannerViewModel(
     /**
      * Trefferbehandlung: im Stapel-Modus wird der beste Treffer sofort erfasst
      * und weitergescannt (ManaBox-Workflow), sonst oeffnet das Ergebnis-Sheet.
+     * Vorher werden die Kandidaten visuell (Perceptual Hash) neu sortiert, damit
+     * bei mehreren namensgleichen Drucken die tatsaechlich gehaltene Edition
+     * gewinnt — auch wenn OCR den Set-Code nicht lesen konnte.
      */
-    private fun onCardsFound(label: String, cards: List<TcgCard>) {
+    private suspend fun onCardsFound(label: String, cards: List<TcgCard>) {
+        val (ranked, confidence) = rankVisually(cards)
         if (batchMode.value) {
-            val best = cards.first()
+            val best = ranked.first()
             addToBatch(best)
-            hint.value = "✓ ${best.name} erfasst – nächste Karte"
+            hint.value = if (confidence >= 0.75f || ranked.size == 1) {
+                "✓ ${best.name} erfasst – nächste Karte"
+            } else {
+                "✓ ${best.name} erfasst (Edition prüfen) – nächste Karte"
+            }
             resumeForNextScan()
         } else {
-            state.value = ScanState.Results(label, cards)
+            state.value = ScanState.Results(label, ranked)
         }
+    }
+
+    /**
+     * Sortiert die Kandidaten nach visueller Aehnlichkeit zum gescannten Bild.
+     * Liefert die (ggf. neu geordnete) Liste plus ein Vertrauensmass 0..1.
+     */
+    private suspend fun rankVisually(cards: List<TcgCard>): Pair<List<TcgCard>, Float> {
+        val fingerprint = lastFingerprint
+        if (fingerprint == null || cards.size < 2) return cards to 0f
+        // Nur die textlich relevantesten Kandidaten visuell pruefen — begrenzt
+        // die Zahl der Bild-Downloads und damit die Latenz im Stapel-Scan.
+        val head = cards.take(VISUAL_MATCH_LIMIT)
+        val tail = cards.drop(VISUAL_MATCH_LIMIT)
+        val ranked = runCatching { matcher.rank(fingerprint, head) }.getOrNull()
+            ?: return cards to 0f
+        return (ranked.cards + tail) to ranked.confidence
     }
 
     /** Wie resumeScanning, behaelt aber Hinweis und Stapel. */
@@ -327,6 +366,7 @@ class ScannerViewModel(
         const val MIN_VOTES = 3
         const val ID_WINDOW = 8
         const val ID_VOTES = 2
+        const val VISUAL_MATCH_LIMIT = 12
     }
 }
 

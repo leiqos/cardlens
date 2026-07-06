@@ -41,6 +41,12 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
   Yu-Gi-Oh!: Passcode & Set-Code, One Piece: Karten-ID, Lorcana: Nummer·Set)
   → ein API-Call, exakte Edition. Name als Fallback. Mit Ecken-Zoom-Zweitpass,
   Frame-Voting, Autofokus, Zielrahmen-Gating, Taschenlampe und Spiel-Filter.
+- **Visueller Editions-Abgleich (Perceptual Hash)** – aus dem Kamerabild wird
+  ein Bild-Fingerabdruck der Kartenregion (dHash + aHash) berechnet und mit den
+  Bildern der Treffer-Kandidaten verglichen. So gewinnt bei vielen namensgleichen
+  Drucken (z. B. 64× „Lightning Bolt") die *tatsächlich gehaltene* Edition —
+  sprach- und OCR-unabhängig, für **alle** TCGs. Im Stapel-Scan wird bei
+  unsicherem Treffer ein „Edition prüfen"-Hinweis gesetzt statt blind zu raten.
 - **Stapel-Scan** – Session-Modus: Karte für Karte scannen, automatisches
   Erfassen mit Haptik, laufender Gesamtwert, Review-Sheet mit
   **Foil-/Zustands-Schnelleinstellung** pro Karte, Ein-Klick-Übernahme.
@@ -146,8 +152,9 @@ app/src/main/java/com/cardlens/tcg/
 │   ├── CardRepository.kt   Parallele Suche über alle APIs + Cache
 │   ├── CsvPort.kt          CSV-Import/-Export + Text-Decklisten (RFC-4180-Parser)
 │   └── SettingsStore.kt    Währung, Theme, Standard-Zustand/-Sprache
+├── scan/                  Perceptual Hash (dHash/aHash) + visueller Karten-Abgleich
 └── ui/
-    ├── scanner/            CameraX + ML Kit OCR + Stapel-Scan mit Varianten
+    ├── scanner/            CameraX + ML Kit OCR + pHash-Fingerprint + Stapel-Scan
     ├── search/             Live-Suche, Filter-Sheet, Autocomplete, Verlauf
     ├── detail/             Details, Editionen, Rulings, Legalitäten, Deck-Aktion
     ├── collection/         Dashboard, Binder, Bulk-Edit, CSV, Wertverlauf

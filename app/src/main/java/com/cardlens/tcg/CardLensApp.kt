@@ -25,6 +25,7 @@ import com.cardlens.tcg.data.remote.SwuService
 import com.cardlens.tcg.data.remote.YgoService
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.variantPrice
+import com.cardlens.tcg.scan.CardImageMatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -132,6 +133,9 @@ class AppContainer(context: Context) {
     val valueSnapshotDao: ValueSnapshotDao = database.valueSnapshotDao()
 
     val settings = SettingsStore(context)
+
+    /** Visueller Karten-Abgleich per Perceptual Hash (nutzt denselben OkHttp). */
+    val cardImageMatcher = CardImageMatcher(okHttp)
 
     val cardJson = json
 
