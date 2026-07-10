@@ -55,12 +55,14 @@ class CardImageMatcher(private val http: OkHttpClient) {
 
         val best = scored.first().second
         val second = scored.getOrNull(1)?.second ?: Int.MAX_VALUE
-        // Vertrauen: kleiner Abstand + deutlicher Vorsprung vor dem Zweitplatzierten.
+        // Vertrauen: kleiner Abstand (Skala 0..384) + Vorsprung vor Platz 2.
+        // Bei nur einem Kandidaten zaehlt allein die absolute Distanz —
+        // damit dient der Wert auch als Bestaetigung eines Einzeltreffers.
         val confidence = when {
             best == Int.MAX_VALUE -> 0f
-            best <= 16 && (second - best) >= 8 -> 1f
-            best <= 24 -> 0.75f
-            best <= 36 -> 0.5f
+            best <= 56 && (second - best) >= 24 -> 1f
+            best <= 88 -> 0.75f
+            best <= 128 -> 0.5f
             else -> 0.25f
         }
         Ranked(scored.map { it.first }, best, confidence)

@@ -42,10 +42,20 @@ interface ScryfallService {
     @GET("cards/named")
     suspend fun byName(@Query("exact") name: String): ScryfallCard
 
+    /** Alle bekannten Sets — dient dem Scanner als Set-Code-Whitelist. */
+    @GET("sets")
+    suspend fun sets(): ScryfallSetList
+
     companion object {
         const val BASE_URL = "https://api.scryfall.com/"
     }
 }
+
+@Serializable
+data class ScryfallSetList(val data: List<ScryfallSetInfo> = emptyList())
+
+@Serializable
+data class ScryfallSetInfo(val code: String)
 
 @Serializable
 data class ScryfallList(val data: List<ScryfallCard> = emptyList())

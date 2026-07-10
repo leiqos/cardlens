@@ -2,8 +2,6 @@ package com.cardlens.tcg.ui.scanner
 
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -15,14 +13,20 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,16 +42,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -55,11 +60,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,13 +81,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -93,25 +103,20 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardlens.tcg.CardLensApp
-import com.cardlens.tcg.scan.PerceptualHash
-import com.cardlens.tcg.model.CardIdentifierDetector
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.formatPrice
-import com.cardlens.tcg.ui.components.CardGridItem
+import com.cardlens.tcg.model.primaryPrice
+import com.cardlens.tcg.scan.ScanGuide
 import com.cardlens.tcg.ui.components.CardImage
 import com.cardlens.tcg.ui.components.EmptyState
 import com.cardlens.tcg.ui.components.GameFilterRow
+import com.cardlens.tcg.ui.components.PriceTag
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 private suspend fun Context.cameraProvider(): ProcessCameraProvider =
@@ -121,28 +126,10 @@ private suspend fun Context.cameraProvider(): ProcessCameraProvider =
     }
 
 /**
- * Schneidet aus dem Analysebild die Kartenregion heraus — dieselbe Geometrie
- * wie der angezeigte Zielrahmen (74 % Breite, Seitenverhaeltnis 63:88, leicht
- * nach oben versetzt). So bezieht sich der Perceptual Hash auf die Karte selbst
- * und nicht auf Hintergrund.
+ * Session-first-Scanner: Kamera bildschirmfuellend, erkannte Karten wandern
+ * ohne Unterbrechung in den Stapel unten (ManaBox-Prinzip). Das Overlay
+ * zeigt live die tatsaechlich erkannten Kartenkanten.
  */
-private fun cropCardRegion(src: Bitmap): Bitmap {
-    val w = src.width
-    val h = src.height
-    if (w <= 0 || h <= 0) return src
-    var cropW = w * 0.74f
-    var cropH = cropW * 88f / 63f
-    if (cropH > h * 0.92f) {
-        cropH = h * 0.92f
-        cropW = cropH * 63f / 88f
-    }
-    val left = ((w - cropW) / 2f).coerceIn(0f, w - 1f)
-    val top = ((h - cropH) / 2f - h * 0.05f).coerceIn(0f, h - 1f)
-    val cw = cropW.coerceAtMost(w - left).toInt().coerceAtLeast(1)
-    val ch = cropH.coerceAtMost(h - top).toInt().coerceAtLeast(1)
-    return Bitmap.createBitmap(src, left.toInt(), top.toInt(), cw, ch)
-}
-
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
@@ -164,7 +151,7 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 EmptyState(
                     icon = Icons.Filled.CameraAlt,
                     title = "Kamerazugriff benötigt",
-                    body = "CardLens liest den Kartennamen direkt über die Kamera und findet die Karte mit aktuellem Marktpreis."
+                    body = "CardLens erkennt Karten direkt über die Kamera und findet Edition und Marktpreis."
                 )
                 Button(onClick = { permission.launchPermissionRequest() }) {
                     Text("Kamera erlauben")
@@ -179,12 +166,15 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val state by viewModel.state.collectAsState()
     val detectedLabel by viewModel.detectedLabel.collectAsState()
+    val detectedGame by viewModel.detectedGame.collectAsState()
     val hint by viewModel.hint.collectAsState()
     val gameFilter by viewModel.gameFilter.collectAsState()
     val currency by viewModel.settings.currency.collectAsState()
-    val batchMode by viewModel.batchMode.collectAsState()
-    val batch by viewModel.batch.collectAsState()
-    val showBatchReview by viewModel.showBatchReview.collectAsState()
+    val session by viewModel.session.collectAsState()
+    val showSessionSheet by viewModel.showSessionSheet.collectAsState()
+    val lowLight by viewModel.lowLight.collectAsState()
+    val quadOverlay by viewModel.quadOverlay.collectAsState()
+    val cardInFrame by viewModel.cardInFrame.collectAsState()
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -198,17 +188,11 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var torchOn by remember { mutableStateOf(false) }
 
-    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val analysisBusy = remember { AtomicBoolean(false) }
-    val recognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
-
     DisposableEffect(Unit) {
         onDispose {
-            // Kamera freigeben, sobald der Scanner-Tab verlassen wird —
-            // bindToLifecycle allein wuerde sie bis zum Activity-Stop weiterlaufen lassen.
+            // Kamera freigeben, sobald der Scanner-Tab verlassen wird. Der
+            // Analyzer (OCR, Executor) lebt im ViewModel weiter.
             cameraProvider?.unbindAll()
-            analysisExecutor.shutdown()
-            recognizer.close()
         }
     }
 
@@ -232,61 +216,8 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                     .build()
             )
             .build()
-        analysis.setAnalyzer(analysisExecutor) { proxy ->
-            // Eigenes Throttling: naechstes Bild erst, wenn beide OCR-Paesse durch sind.
-            if (!analysisBusy.compareAndSet(false, true)) {
-                proxy.close()
-                return@setAnalyzer
-            }
-            val rotation = proxy.imageInfo.rotationDegrees
-            val raw = proxy.toBitmap()
-            proxy.close()
-            val upright = if (rotation != 0) {
-                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-                Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
-            } else {
-                raw
-            }
-
-            // Visueller Fingerabdruck der Kartenregion (Perceptual Hash) —
-            // Grundlage des Editions-Abgleichs beim Treffer.
-            runCatching {
-                val cardCrop = cropCardRegion(upright)
-                viewModel.submitFingerprint(PerceptualHash.fingerprint(cardCrop))
-                if (cardCrop != upright) cardCrop.recycle()
-            }
-
-            // Pass 1: Vollbild — Kartenname + gut lesbare Kennungen
-            recognizer.process(InputImage.fromBitmap(upright, 0))
-                .addOnSuccessListener { text ->
-                    viewModel.onFrame(
-                        CardNameExtractor.extract(text, upright.width, upright.height)
-                    )
-                }
-                .addOnCompleteListener {
-                    if (viewModel.needsIdentifierBoost()) {
-                        // Pass 2 (Ecken-Zoom): unteres Drittel 2x hochskaliert —
-                        // dort stehen die klein gedruckten Druck-Kennungen.
-                        val top = (upright.height * 0.60f).toInt()
-                        val band = Bitmap.createBitmap(
-                            upright, 0, top, upright.width, upright.height - top
-                        )
-                        val zoomed = Bitmap.createScaledBitmap(
-                            band, band.width * 2, band.height * 2, true
-                        )
-                        recognizer.process(InputImage.fromBitmap(zoomed, 0))
-                            .addOnSuccessListener { bandText ->
-                                viewModel.offerIdentifiers(
-                                    CardIdentifierDetector.detect(
-                                        bandText.textBlocks.flatMap { it.lines }.map { it.text }
-                                    )
-                                )
-                            }
-                            .addOnCompleteListener { analysisBusy.set(false) }
-                    } else {
-                        analysisBusy.set(false)
-                    }
-                }
+        analysis.setAnalyzer(viewModel.analyzer.executor) { proxy ->
+            viewModel.analyzer.analyze(proxy, previewView.width, previewView.height)
         }
         provider.unbindAll()
         camera = provider.bindToLifecycle(
@@ -297,8 +228,8 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
         )
     }
 
-    // Fokus regelmaessig auf die Kartenmitte ziehen — scharfe Kennungen
-    // sind die Grundlage fuer die Exakt-Erkennung.
+    // Fokus regelmaessig auf die Kartenmitte ziehen — scharfer Kleindruck
+    // ist die Grundlage der Exakt-Erkennung.
     LaunchedEffect(camera) {
         val cam = camera ?: return@LaunchedEffect
         val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
@@ -313,52 +244,68 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
         }
     }
 
-    // Vibration, sobald Treffer da sind
+    // Haptik, wenn der Editions-Waehler aufgeht
     LaunchedEffect(state) {
-        if (state is ScanState.Results) {
+        if (state is ScanState.ConfirmPick) {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
 
-    // Vibration bei jeder Stapel-Erfassung
-    var lastBatchCount by remember { mutableIntStateOf(0) }
-    LaunchedEffect(batch) {
-        val count = batch.sumOf { it.quantity }
-        if (count > lastBatchCount) {
+    // Haptik + gruener Rahmen-Blitz bei jeder Erfassung
+    val successFlash = remember { Animatable(0f) }
+    var lastCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(session) {
+        val count = session.sumOf { it.quantity }
+        if (count > lastCount) {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            successFlash.snapTo(1f)
+            successFlash.animateTo(0f, animationSpec = tween(750))
         }
-        lastBatchCount = count
+        lastCount = count
     }
 
     val accent = MaterialTheme.colorScheme.secondary
     val isScanning = state is ScanState.Scanning
-    val scanLine by rememberInfiniteTransition(label = "scan")
-        .animateFloat(
-            initialValue = 0.08f,
-            targetValue = 0.92f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "scanLine"
-        )
+    val isResolving = state is ScanState.Resolving
+    val hasLock = detectedLabel != null || isResolving
+
+    // Farbe kommuniziert den Zustand: weiss beim Suchen, Akzent bei Erkennung.
+    val bracketColor by animateColorAsState(
+        targetValue = if (hasLock) accent else Color.White.copy(alpha = 0.9f),
+        animationSpec = tween(350),
+        label = "bracketColor"
+    )
+    // Ruhiges "Atmen" der Ecken, solange keine Karte im Rahmen liegt
+    val breath by rememberInfiniteTransition(label = "breath").animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathAlpha"
+    )
+    val bracketAlpha = if (hasLock || cardInFrame) 1f else breath
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
 
-        // Abdunkelung mit Karten-Ausschnitt, Ecken-Markierungen und Scanlinie
+        // Abdunkelung mit Karten-Ausschnitt, live erkannten Kartenkanten
+        // und Ecken-Markierungen. Rahmen-Geometrie = ScanGuide (identisch
+        // mit der Analyse — was markiert ist, wird auch analysiert).
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
         ) {
-            val frameW = size.width * 0.74f
-            val frameH = frameW * 88f / 63f
-            val left = (size.width - frameW) / 2f
-            val top = ((size.height - frameH) / 2f - size.height * 0.05f).coerceAtLeast(0f)
+            val guide = ScanGuide.rect(size.width, size.height)
+            val left = guide[0]
+            val top = guide[1]
+            val frameW = guide[2] - guide[0]
+            val frameH = guide[3] - guide[1]
             val corner = 20.dp.toPx()
 
-            drawRect(Color.Black.copy(alpha = 0.55f))
+            drawRect(Color.Black.copy(alpha = 0.6f))
             drawRoundRect(
                 color = Color.Transparent,
                 topLeft = Offset(left, top),
@@ -367,37 +314,52 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 blendMode = BlendMode.Clear
             )
 
-            // Ecken-Markierungen
+            // Live erkannte Kartenkanten — direktes Feedback der Erkennung
+            quadOverlay?.let { q ->
+                val path = Path().apply {
+                    moveTo(q[0] * size.width, q[1] * size.height)
+                    lineTo(q[2] * size.width, q[3] * size.height)
+                    lineTo(q[4] * size.width, q[5] * size.height)
+                    lineTo(q[6] * size.width, q[7] * size.height)
+                    close()
+                }
+                drawPath(
+                    path,
+                    color = bracketColor.copy(alpha = 0.85f),
+                    style = Stroke(width = 2.dp.toPx(), join = StrokeJoin.Round)
+                )
+            }
+
+            // Gruener Bestaetigungs-Blitz bei jeder Erfassung
+            if (successFlash.value > 0.01f) {
+                drawRoundRect(
+                    color = Color(0xFF3DDC84).copy(alpha = successFlash.value),
+                    topLeft = Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(frameW, frameH),
+                    cornerRadius = CornerRadius(corner),
+                    style = Stroke(width = 4.dp.toPx())
+                )
+            }
+
+            // Ecken-Markierungen: atmen im Leerlauf, leuchten bei Erkennung
             val len = 30.dp.toPx()
             val stroke = 4.dp.toPx()
             val r = left + frameW
             val b = top + frameH
             val cap = StrokeCap.Round
+            val cornerColor = bracketColor.copy(alpha = bracketColor.alpha * bracketAlpha)
             fun cornerLines(x: Float, y: Float, dx: Float, dy: Float) {
-                drawLine(accent, Offset(x, y + dy * corner), Offset(x, y + dy * len), stroke, cap)
-                drawLine(accent, Offset(x + dx * corner, y), Offset(x + dx * len, y), stroke, cap)
+                drawLine(cornerColor, Offset(x, y + dy * corner), Offset(x, y + dy * len), stroke, cap)
+                drawLine(cornerColor, Offset(x + dx * corner, y), Offset(x + dx * len, y), stroke, cap)
             }
             cornerLines(left, top, 1f, 1f)
             cornerLines(r, top, -1f, 1f)
             cornerLines(left, b, 1f, -1f)
             cornerLines(r, b, -1f, -1f)
-
-            // Scanlinie, solange gescannt wird
-            if (isScanning) {
-                val y = top + frameH * scanLine
-                drawLine(
-                    brush = Brush.horizontalGradient(
-                        listOf(Color.Transparent, accent.copy(alpha = 0.85f), Color.Transparent)
-                    ),
-                    start = Offset(left + 10.dp.toPx(), y),
-                    end = Offset(left + frameW - 10.dp.toPx(), y),
-                    strokeWidth = 2.dp.toPx()
-                )
-            }
         }
 
-        // Spiel-Filter oben, auf Verlaufs-Scrim fuer Lesbarkeit
-        Column(
+        // Spiel-Filter + Taschenlampe oben, auf Verlaufs-Scrim fuer Lesbarkeit
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -406,128 +368,250 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                     )
                 )
                 .statusBarsPadding()
-                .padding(top = 8.dp, bottom = 24.dp)
+                .padding(top = 8.dp, bottom = 24.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             GameFilterRow(
                 selected = gameFilter,
-                onSelect = { viewModel.gameFilter.value = it }
+                onSelect = { viewModel.gameFilter.value = it },
+                modifier = Modifier.weight(1f)
             )
+            FilledTonalIconButton(onClick = {
+                torchOn = !torchOn
+                camera?.cameraControl?.enableTorch(torchOn)
+            }) {
+                Icon(
+                    imageVector = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                    contentDescription = "Taschenlampe",
+                    tint = if (lowLight && !torchOn) MaterialTheme.colorScheme.tertiary
+                    else LocalContentColor.current
+                )
+            }
         }
 
-        // Statuskarte unten
-        Surface(
+        // Session-Tray unten (ManaBox-Prinzip): Status, letzte Karte, Summe
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(16.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            tonalElevation = 3.dp
+                .padding(16.dp)
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = when (val s = state) {
-                                is ScanState.Searching -> "Suche \"${s.label}\" …"
-                                else -> detectedLabel?.let { "Erkannt: $it" }
-                                    ?: "Karte in den Rahmen halten"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = hint
-                                ?: "Kennung oder Name wird automatisch erkannt.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (hint != null) MaterialTheme.colorScheme.tertiary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    FilledTonalIconButton(onClick = {
-                        torchOn = !torchOn
-                        camera?.cameraControl?.enableTorch(torchOn)
-                    }) {
-                        Icon(
-                            imageVector = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                            contentDescription = "Taschenlampe"
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
-                        selected = batchMode,
-                        onClick = { viewModel.batchMode.value = !batchMode },
-                        label = { Text("Stapel-Scan") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.Layers,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                tonalElevation = 3.dp
+            ) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    // Status-Zeile
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isResolving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = when {
+                                    isResolving -> "Suche ${(state as ScanState.Resolving).label} …"
+                                    detectedLabel != null -> "Erkannt: $detectedLabel"
+                                    detectedGame != null -> "${detectedGame?.shortLabel} erkannt …"
+                                    cardInFrame -> "Karte im Rahmen – lese …"
+                                    else -> "Karte in den Rahmen halten"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = hint
+                                    ?: if (lowLight && !torchOn) {
+                                        "Wenig Licht – Taschenlampe einschalten."
+                                    } else {
+                                        "Kennung, Name und Bild werden automatisch abgeglichen."
+                                    },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (hint != null || (lowLight && !torchOn)) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    if (batchMode && batch.isNotEmpty()) {
-                        Text(
-                            text = "${viewModel.batchCount()} Karten · ≈ " +
-                                formatPrice(viewModel.batchTotal(currency), currency),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        TextButton(onClick = { viewModel.showBatchReview.value = true }) {
-                            Text("Prüfen")
+                        if (isResolving) {
+                            IconButton(onClick = { viewModel.cancelSearch() }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Suche abbrechen")
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { viewModel.searchNow() },
+                                enabled = detectedLabel != null && isScanning
+                            ) {
+                                Icon(Icons.Filled.Search, contentDescription = "Jetzt suchen")
+                            }
                         }
                     }
-                }
-                Spacer(Modifier.height(4.dp))
-                if (state is ScanState.Searching) {
-                    OutlinedButton(
-                        onClick = { viewModel.cancelSearch() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Abbrechen")
-                    }
-                } else {
-                    Button(
-                        onClick = { viewModel.searchNow() },
-                        enabled = detectedLabel != null && isScanning,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Search, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Jetzt suchen")
+
+                    // Zuletzt erfasste Karte + Session-Summe
+                    val last = session.lastOrNull()
+                    if (last != null) {
+                        HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CardImage(
+                                url = last.card.imageSmall ?: last.card.imageLarge,
+                                contentDescription = last.card.name,
+                                modifier = Modifier
+                                    .width(44.dp)
+                                    .clickable { onOpenCard(last.card) }
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = last.card.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = listOfNotNull(
+                                        last.card.setName,
+                                        last.card.collectorNumber?.let { "#$it" }
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val price = last.card.primaryPrice(currency)
+                                Text(
+                                    text = (price?.let { formatPrice(it.amount, it.currency) }
+                                        ?: "kein Preis") +
+                                        if (last.quantity > 1) "  ·  ${last.quantity}×" else "",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            IconButton(onClick = { viewModel.undoLast() }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = "Letzte Erfassung zurücknehmen"
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${viewModel.sessionCount()} Karten · ≈ " +
+                                    formatPrice(viewModel.sessionTotal(currency), currency),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            TextButton(onClick = { viewModel.showSessionSheet.value = true }) {
+                                Text("Liste")
+                            }
+                            Button(onClick = { viewModel.commitSession() }) {
+                                Text("Übernehmen")
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    // Stapel-Review als Bottom-Sheet
-    if (showBatchReview) {
-        val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Editions-Waehler: unsicherer Treffer → Nutzer tippt die richtige Version
+    val confirm = state as? ScanState.ConfirmPick
+    if (confirm != null) {
+        val confirmSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { viewModel.showBatchReview.value = false },
-            sheetState = reviewSheet
+            onDismissRequest = { viewModel.resumeScanning() },
+            sheetState = confirmSheet
         ) {
             Column(Modifier.padding(bottom = 24.dp)) {
                 Text(
-                    text = "Gescannte Karten (${viewModel.batchCount()})",
+                    text = "Welche Version ist es?",
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
                 Text(
-                    text = "Gesamtwert ≈ ${formatPrice(viewModel.batchTotal(currency), currency)}",
+                    text = "Erkannt: \"${confirm.label}\" – tippe die passende Karte, " +
+                        "sie wandert in den Stapel.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(confirm.cards, key = { it.id }) { card ->
+                        Column(
+                            modifier = Modifier
+                                .width(150.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { viewModel.addFromConfirm(card) }
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(8.dp)
+                        ) {
+                            CardImage(
+                                url = card.imageSmall ?: card.imageLarge,
+                                contentDescription = card.name,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = card.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            card.setName?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            PriceTag(card, currency)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(
+                    onClick = { viewModel.resumeScanning() },
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text("Keine davon – weiter scannen")
+                }
+            }
+        }
+    }
+
+    // Session-Liste als Bottom-Sheet: Mengen, Foil, Zustand, Uebernahme
+    if (showSessionSheet) {
+        val sessionSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.showSessionSheet.value = false },
+            sheetState = sessionSheet
+        ) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    text = "Gescannte Karten (${viewModel.sessionCount()})",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+                Text(
+                    text = "Gesamtwert ≈ ${formatPrice(viewModel.sessionTotal(currency), currency)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp)
@@ -538,7 +622,7 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    itemsIndexed(batch) { index, entry ->
+                    itemsIndexed(session) { index, entry ->
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -552,7 +636,9 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                 CardImage(
                                     url = entry.card.imageSmall ?: entry.card.imageLarge,
                                     contentDescription = entry.card.name,
-                                    modifier = Modifier.width(42.dp)
+                                    modifier = Modifier
+                                        .width(42.dp)
+                                        .clickable { onOpenCard(entry.card) }
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
@@ -573,13 +659,13 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                     }
                                 }
                                 IconButton(onClick = {
-                                    viewModel.setBatchQuantity(index, entry.quantity - 1)
+                                    viewModel.setQuantity(index, entry.quantity - 1)
                                 }) {
                                     Icon(Icons.Filled.Remove, contentDescription = "Weniger")
                                 }
                                 Text("${entry.quantity}", style = MaterialTheme.typography.titleSmall)
                                 IconButton(onClick = {
-                                    viewModel.setBatchQuantity(index, entry.quantity + 1)
+                                    viewModel.setQuantity(index, entry.quantity + 1)
                                 }) {
                                     Icon(Icons.Filled.Add, contentDescription = "Mehr")
                                 }
@@ -591,13 +677,13 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                             ) {
                                 FilterChip(
                                     selected = entry.foil,
-                                    onClick = { viewModel.toggleBatchFoil(index) },
+                                    onClick = { viewModel.toggleFoil(index) },
                                     label = { Text("Foil ✦") }
                                 )
                                 listOf("NM", "EX", "GD", "PL").forEach { code ->
                                     FilterChip(
                                         selected = entry.condition == code,
-                                        onClick = { viewModel.setBatchCondition(index, code) },
+                                        onClick = { viewModel.setCondition(index, code) },
                                         label = { Text(code) }
                                     )
                                 }
@@ -607,68 +693,19 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
                 Button(
-                    onClick = { viewModel.commitBatch() },
-                    enabled = batch.isNotEmpty(),
+                    onClick = { viewModel.commitSession() },
+                    enabled = session.isNotEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp)
                 ) {
-                    Text("Alle ${viewModel.batchCount()} zur Sammlung hinzufügen")
+                    Text("Alle ${viewModel.sessionCount()} zur Sammlung hinzufügen")
                 }
                 TextButton(
-                    onClick = { viewModel.clearBatch() },
+                    onClick = { viewModel.clearSession() },
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
                     Text("Session verwerfen")
-                }
-            }
-        }
-    }
-
-    // Treffer als Bottom-Sheet
-    val results = state as? ScanState.Results
-    if (results != null) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { viewModel.resumeScanning() },
-            sheetState = sheetState
-        ) {
-            Column(Modifier.padding(bottom = 24.dp)) {
-                Text(
-                    text = "Treffer für \"${results.label}\"",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                Text(
-                    text = "${results.cards.size} Karten gefunden – tippe für Details & Preise",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.heightIn(max = 460.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(results.cards, key = { it.id }) { card ->
-                        CardGridItem(
-                            card = card,
-                            currency = currency,
-                            onClick = { onOpenCard(card) }
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { viewModel.resumeScanning() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                ) {
-                    Text("Weiter scannen")
                 }
             }
         }

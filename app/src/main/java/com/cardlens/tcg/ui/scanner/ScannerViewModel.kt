@@ -9,9 +9,13 @@ import com.cardlens.tcg.data.local.CollectionEntry
 import com.cardlens.tcg.model.CardIdentifier
 import com.cardlens.tcg.model.TcgCard
 import com.cardlens.tcg.model.TcgGame
+import com.cardlens.tcg.model.game
+import com.cardlens.tcg.model.isStrong
 import com.cardlens.tcg.model.primaryPrice
 import com.cardlens.tcg.scan.CardImageMatcher
 import com.cardlens.tcg.scan.PerceptualHash
+import com.cardlens.tcg.scan.ScanAnalyzer
+import com.cardlens.tcg.scan.ScanReading
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,13 +25,21 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 sealed interface ScanState {
+    /** Kamera laeuft, Pipeline sammelt Evidenz. */
     data object Scanning : ScanState
-    data class Searching(val label: String) : ScanState
-    data class Results(val label: String, val cards: List<TcgCard>) : ScanState
+
+    /** Kennung/Name wird gerade aufgeloest — nicht blockierend. */
+    data class Resolving(val label: String) : ScanState
+
+    /**
+     * Treffer ist mehrdeutig (Signale widersprechen sich oder mehrere
+     * Editionen gleichauf) — der Nutzer waehlt die richtige Version.
+     */
+    data class ConfirmPick(val label: String, val cards: List<TcgCard>) : ScanState
 }
 
-/** Eintrag der Stapel-Scan-Session (mit Varianten-Merkmalen). */
-data class BatchEntry(
+/** Eintrag der Scan-Session (mit Varianten-Merkmalen). */
+data class SessionEntry(
     val card: TcgCard,
     val quantity: Int,
     val foil: Boolean = false,
@@ -35,6 +47,13 @@ data class BatchEntry(
     val language: String = "en"
 )
 
+/**
+ * Session-first-Scanner nach ManaBox-Vorbild: jede sicher erkannte Karte
+ * landet sofort im Session-Stapel (Haptik + Blitz), ohne den Scan-Fluss zu
+ * unterbrechen. Korrekturen (Menge, Foil, Zustand, Edition) passieren im
+ * Stapel — nicht in blockierenden Dialogen. Erst "Übernehmen" schreibt die
+ * Session in die Sammlung.
+ */
 class ScannerViewModel(
     private val repository: CardRepository,
     private val dao: CollectionDao,
@@ -43,75 +62,130 @@ class ScannerViewModel(
     val settings: SettingsStore
 ) : ViewModel() {
 
+    // --- Kamera-Pipeline ------------------------------------------------------
+
     /**
-     * Fingerabdruck der zuletzt im Rahmen gesehenen Karte (Perceptual Hash).
-     * Wird pro Kamerabild aktualisiert und beim Treffer genutzt, um aus
-     * mehreren Druck-Kandidaten den visuell passenden auszuwaehlen.
+     * Der Analyzer lebt im ViewModel (ueberdauert Tab-Wechsel-Recompositions);
+     * der Screen bindet nur die Kamera an ihn.
+     */
+    val analyzer = ScanAnalyzer(
+        onFrame = { quad, detected, fingerprint ->
+            quadOverlay.value = quad
+            cardInFrame.value = detected
+            submitFingerprint(fingerprint)
+        },
+        onReading = ::onReading,
+        needsIdentifierBoost = { state.value is ScanState.Scanning }
+    )
+
+    override fun onCleared() {
+        analyzer.close()
+    }
+
+    /** Erkanntes Karten-Quad (View-normiert) fuers Live-Overlay. */
+    val quadOverlay = MutableStateFlow<FloatArray?>(null)
+
+    /** Liegt gerade eine Karte im Rahmen? */
+    val cardInFrame = MutableStateFlow(false)
+
+    /**
+     * Fingerabdruck der zuletzt im Rahmen gesehenen Karte (Perceptual Hash des
+     * entzerrten Kartenbilds). Beim Start einer Suche wird der aktuelle Wert
+     * eingefroren, damit der visuelle Abgleich die gescannte Karte vergleicht.
      */
     @Volatile
     private var lastFingerprint: PerceptualHash.Fingerprint? = null
 
-    fun submitFingerprint(fingerprint: PerceptualHash.Fingerprint) {
+    /** Schwachlicht-Erkennung: mehrere dunkle Frames in Folge → Hinweis. */
+    val lowLight = MutableStateFlow(false)
+    private var darkFrames = 0
+
+    private fun submitFingerprint(fingerprint: PerceptualHash.Fingerprint) {
         lastFingerprint = fingerprint
+        darkFrames = if (fingerprint.meanLuma < 55) darkFrames + 1 else 0
+        lowLight.value = darkFrames >= 6
     }
 
-    // --- Stapel-Scan (Session wie bei ManaBox) ---
-    val batchMode = MutableStateFlow(false)
-    val batch = MutableStateFlow<List<BatchEntry>>(emptyList())
-    val showBatchReview = MutableStateFlow(false)
+    // --- Scan-Session ---------------------------------------------------------
 
-    fun batchTotal(currency: String): Double = batch.value.sumOf { entry ->
+    val session = MutableStateFlow<List<SessionEntry>>(emptyList())
+    val showSessionSheet = MutableStateFlow(false)
+
+    fun sessionTotal(currency: String): Double = session.value.sumOf { entry ->
         (entry.card.primaryPrice(currency)?.amount ?: 0.0) * entry.quantity
     }
 
-    fun batchCount(): Int = batch.value.sumOf { it.quantity }
+    fun sessionCount(): Int = session.value.sumOf { it.quantity }
 
-    private fun addToBatch(card: TcgCard) {
-        val current = batch.value
+    /** Duplikat-Bremse: dieselbe Karte feuert fruehestens alle 2 s erneut. */
+    private var lastAddedCardId: String? = null
+    private var lastAddedAt = 0L
+
+    private fun addToSession(card: TcgCard): Boolean {
+        val now = System.currentTimeMillis()
+        if (card.id == lastAddedCardId && now - lastAddedAt < DUPLICATE_COOLDOWN_MS) return false
+        lastAddedCardId = card.id
+        lastAddedAt = now
+        val current = session.value
         val last = current.lastOrNull()
-        batch.value = if (last?.card?.id == card.id) {
+        session.value = if (last?.card?.id == card.id && !last.foil) {
             current.dropLast(1) + last.copy(quantity = last.quantity + 1)
         } else {
-            current + BatchEntry(
+            current + SessionEntry(
                 card = card,
                 quantity = 1,
                 condition = settings.defaultCondition.value,
                 language = settings.defaultLanguage.value
             )
         }
+        return true
     }
 
-    fun toggleBatchFoil(index: Int) {
-        val current = batch.value.toMutableList()
+    /** Letzte Erfassung zuruecknehmen (Menge −1 bzw. Eintrag entfernen). */
+    fun undoLast() {
+        val current = session.value
+        val last = current.lastOrNull() ?: return
+        session.value = if (last.quantity > 1) {
+            current.dropLast(1) + last.copy(quantity = last.quantity - 1)
+        } else {
+            current.dropLast(1)
+        }
+        hint.value = "Erfassung zurückgenommen."
+        lastAddedCardId = null
+    }
+
+    fun toggleFoil(index: Int) {
+        val current = session.value.toMutableList()
         if (index !in current.indices) return
         current[index] = current[index].copy(foil = !current[index].foil)
-        batch.value = current
+        session.value = current
     }
 
-    fun setBatchCondition(index: Int, condition: String) {
-        val current = batch.value.toMutableList()
+    fun setCondition(index: Int, condition: String) {
+        val current = session.value.toMutableList()
         if (index !in current.indices) return
         current[index] = current[index].copy(condition = condition)
-        batch.value = current
+        session.value = current
     }
 
-    fun setBatchQuantity(index: Int, quantity: Int) {
-        val current = batch.value.toMutableList()
+    fun setQuantity(index: Int, quantity: Int) {
+        val current = session.value.toMutableList()
         if (index !in current.indices) return
         if (quantity <= 0) current.removeAt(index) else {
             current[index] = current[index].copy(quantity = quantity)
         }
-        batch.value = current
+        session.value = current
     }
 
-    fun clearBatch() {
-        batch.value = emptyList()
-        showBatchReview.value = false
+    fun clearSession() {
+        session.value = emptyList()
+        showSessionSheet.value = false
+        lastAddedCardId = null
     }
 
     /** Gesamte Session in die Sammlung uebernehmen (Varianten-Mengen addieren). */
-    fun commitBatch() {
-        val entries = batch.value
+    fun commitSession() {
+        val entries = session.value
         if (entries.isEmpty()) return
         viewModelScope.launch {
             for (entry in entries) {
@@ -145,17 +219,27 @@ class ScannerViewModel(
                 )
             }
             val count = entries.sumOf { it.quantity }
-            batch.value = emptyList()
-            showBatchReview.value = false
+            session.value = emptyList()
+            showSessionSheet.value = false
+            lastAddedCardId = null
             hint.value = "✓ $count Karten zur Sammlung hinzugefügt."
         }
     }
+
+    // --- Erkennungs-Zustand -----------------------------------------------------
 
     val gameFilter = MutableStateFlow<TcgGame?>(null)
     val state = MutableStateFlow<ScanState>(ScanState.Scanning)
 
     /** Stabil erkannter Kandidat (Kennung oder Name) fuer die Live-Anzeige. */
     val detectedLabel = MutableStateFlow<String?>(null)
+
+    /**
+     * Aus den gedruckten Merkmalen (Typzeile, KP/HP, ATK/DEF, Copyright …)
+     * erkanntes Spiel — per Mehrheitsvotum ueber die letzten Frames.
+     */
+    val detectedGame = MutableStateFlow<TcgGame?>(null)
+    private val recentGames = ArrayDeque<TcgGame>()
 
     /** Kurzlebige Hinweise, z. B. "keine Treffer". */
     val hint = MutableStateFlow<String?>(null)
@@ -170,11 +254,17 @@ class ScannerViewModel(
     // Fenster statt "in Folge": einzelne OCR-Aussetzer setzen nichts zurueck.
     private val recentIdentifiers = ArrayDeque<CardIdentifier>()
     private var stableIdentifier: CardIdentifier? = null
-    private var failedIdentifier: CardIdentifier? = null
+    private val failedIdentifiers = mutableSetOf<CardIdentifier>()
+
+    /** Whitelist gueltiger Magic-Set-Codes — verwirft OCR-Fehllesungen sofort. */
+    private var magicSetCodes: Set<String>? = null
 
     private var searchJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            magicSetCodes = runCatching { repository.magicSetCodes() }.getOrNull()
+        }
         @OptIn(FlowPreview::class)
         viewModelScope.launch {
             nameCandidate.filterNotNull().debounce(700).collect { name ->
@@ -187,55 +277,101 @@ class ScannerViewModel(
         }
     }
 
-    /** Wird pro analysiertem Kamerabild aufgerufen (Vollbild-Durchgang). */
-    fun onFrame(reading: ScanReading) {
+    /**
+     * Plausibilitaets-Filter vor jedem Lookup: bereits gescheiterte Kennungen
+     * und offensichtliche Fehllesungen (unbekannter Set-Code, Nummer ausser
+     * Bereich) fliegen raus, bevor sie einen API-Call kosten.
+     */
+    private fun validated(identifiers: List<CardIdentifier>): List<CardIdentifier> =
+        identifiers.filter { id ->
+            id !in failedIdentifiers &&
+                gameFilter.value.let { it == null || id.game == it } &&
+                when (id) {
+                    is CardIdentifier.Magic -> {
+                        val sets = magicSetCodes
+                        sets == null || id.setCode.uppercase() in sets
+                    }
+                    is CardIdentifier.Pokemon ->
+                        // Das nackte Nummer/Total-Paar steht auch auf Magic- und
+                        // Lorcana-Karten. Es zaehlt nur, wenn die gedruckten
+                        // Merkmale nicht klar auf ein ANDERES Spiel zeigen.
+                        detectedGame.value.let { it == null || it == TcgGame.POKEMON } &&
+                            (id.printedTotal.toIntOrNull() ?: 0) in 20..999 &&
+                            (id.number.toIntOrNull() ?: 0) in 1..999
+                    is CardIdentifier.Lorcana ->
+                        (id.setNumber.toIntOrNull() ?: 0) in 1..15
+                    is CardIdentifier.YugiohPasscode ->
+                        id.passcode.toSet().size > 1 // "00000000" u. ae. sind OCR-Muell
+                    else -> true
+                }
+        }
+
+    /** Wird pro OCR-Durchgang des Analyzers aufgerufen. */
+    fun onReading(reading: ScanReading) {
         if (state.value !is ScanState.Scanning) return
 
-        offerIdentifiers(reading.identifiers)
-        if (state.value !is ScanState.Scanning) return // Kennung hat Suche gestartet
-
-        // Fallback: Kartenname per Mehrheitsvotum ueber die letzten Frames.
-        val candidate = reading.nameCandidate ?: return
-        val norm = normalize(candidate)
-        if (norm.length < 3) return
-        displayText[norm] = candidate
-        recentNames.addLast(norm)
-        if (recentNames.size > VOTE_WINDOW) recentNames.removeFirst()
-        val votes = recentNames.count { fuzzyEquals(it, norm) }
-        if (votes >= MIN_VOTES) {
-            nameCandidate.value = displayText[norm]
-            if (recentIdentifiers.isEmpty()) detectedLabel.value = displayText[norm]
-            hint.value = null
+        // Spiel-Erkennung per Mehrheitsvotum ueber die letzten Frames.
+        reading.gameHint?.let { hintGame ->
+            recentGames.addLast(hintGame)
+            if (recentGames.size > GAME_WINDOW) recentGames.removeFirst()
+            detectedGame.value = recentGames
+                .groupingBy { it }.eachCount()
+                .maxByOrNull { it.value }
+                ?.takeIf { it.value >= GAME_VOTES }
+                ?.key
         }
+
+        // Kartenname per Mehrheitsvotum ueber die letzten Frames aktualisieren.
+        val candidate = reading.nameCandidate
+        if (candidate != null) {
+            val norm = normalize(candidate)
+            if (norm.length >= 3) {
+                displayText[norm] = candidate
+                recentNames.addLast(norm)
+                if (recentNames.size > VOTE_WINDOW) recentNames.removeFirst()
+                if (recentNames.count { fuzzyEquals(it, norm) } >= MIN_VOTES) {
+                    nameCandidate.value = displayText[norm]
+                    if (recentIdentifiers.isEmpty()) detectedLabel.value = displayText[norm]
+                    hint.value = null
+                }
+            }
+        }
+
+        // Blitzstart nur fuer STARKE Kennungen (Spiel strukturell eindeutig):
+        // Kennung + Name im selben Frame sind zwei unabhaengige Signale.
+        // Das schwache Nummer/Total-Paar (Pokémon-Muster steht auch auf Magic-
+        // und Lorcana-Karten!) muss dagegen immer das Voting durchlaufen.
+        offerIdentifiers(reading.identifiers, instant = candidate != null)
     }
 
     /**
-     * Kennungen einspeisen — aus dem Vollbild- oder dem Ecken-Zoom-Durchgang.
-     * Loest die Suche aus, sobald dieselbe Kennung 2x im Fenster auftaucht.
+     * Kennungen einspeisen — aus dem Karten- oder dem Zoom-Durchgang.
+     * Starke Kennungen loesen die Suche nach 2 Sichtungen aus (oder sofort
+     * bei [instant]-Evidenz); das schwache Pokémon-Muster braucht 3 und nie
+     * sofort — sonst kapert es Karten anderer Spiele.
      */
-    fun offerIdentifiers(identifiers: List<CardIdentifier>) {
+    private fun offerIdentifiers(identifiers: List<CardIdentifier>, instant: Boolean = false) {
         if (state.value !is ScanState.Scanning) return
-        val id = identifiers.firstOrNull { it != failedIdentifier } ?: return
+        val valid = validated(identifiers)
+        val id = valid.firstOrNull() ?: return
         recentIdentifiers.addLast(id)
         if (recentIdentifiers.size > ID_WINDOW) recentIdentifiers.removeFirst()
         detectedLabel.value = id.display
         hint.value = null
-        if (recentIdentifiers.count { it == id } >= ID_VOTES) {
+        val needed = if (id.isStrong) ID_VOTES else ID_VOTES + 1
+        val fire = (instant && id.isStrong) ||
+            recentIdentifiers.count { it == id } >= needed
+        if (fire) {
             stableIdentifier = id
-            searchByIdentifiers(
-                listOf(id) + identifiers.filter { it != id && it != failedIdentifier }
-            )
+            searchByIdentifiers(listOf(id) + valid.filter { it != id })
         }
     }
-
-    /** Lohnt sich der Ecken-Zoom-Durchgang noch? */
-    fun needsIdentifierBoost(): Boolean = state.value is ScanState.Scanning
 
     /** Sofortsuche per Button, ohne auf das Debounce zu warten. */
     fun searchNow() {
         if (state.value !is ScanState.Scanning) return
         val identifier = (stableIdentifier ?: recentIdentifiers.lastOrNull())
-            ?.takeIf { it != failedIdentifier }
+            ?.takeIf { it !in failedIdentifiers }
         val name = nameCandidate.value
         when {
             identifier != null -> searchByIdentifiers(listOf(identifier))
@@ -256,15 +392,38 @@ class ScannerViewModel(
 
     private fun searchByIdentifiers(identifiers: List<CardIdentifier>) {
         val first = identifiers.firstOrNull() ?: return
-        state.value = ScanState.Searching(first.display)
+        // Momentaufnahmen fuer die Trefferpruefung: das Kartenbild und der
+        // OCR-Name JETZT — nicht das, was waehrend der Suche im Rahmen liegt.
+        val fingerprint = lastFingerprint
+        val ocrName = nameCandidate.value
+            ?: recentNames.lastOrNull()?.let { displayText[it] }
+        state.value = ScanState.Resolving(first.display)
         searchJob = viewModelScope.launch {
             for (identifier in identifiers) {
                 val cards = runCatching { repository.resolve(identifier) }.getOrDefault(emptyList())
                 if (cards.isNotEmpty()) {
-                    onCardsFound(identifier.display, cards)
+                    // Namens-Gegenprobe: eine falsch gelesene Kennung loest sich
+                    // fast nie zu einer Karte auf, deren Name auch noch passt.
+                    val nameAgrees = ocrName == null || cards.any { nameMatches(it.name, ocrName) }
+                    if (nameAgrees) {
+                        onCardsFound(identifier.display, cards, fingerprint, true)
+                    } else {
+                        // Kennung und gelesener Name widersprechen sich —
+                        // vermutlich eine Fehllesung der Nummer. Beide
+                        // Deutungen anbieten: der visuelle Abgleich sortiert
+                        // die tatsaechlich gehaltene Karte nach vorn, statt
+                        // nur den falschen Kennungs-Treffer zu zeigen.
+                        val byName = ocrName?.let { name ->
+                            runCatching {
+                                repository.search(name, gameFilter.value ?: detectedGame.value)
+                            }.getOrDefault(emptyList()).let { rankByRelevance(it, name) }
+                        }.orEmpty()
+                        val merged = (cards + byName).distinctBy { it.id }
+                        onCardsFound(identifier.display, merged, fingerprint, nameAgrees = false)
+                    }
                     return@launch
                 }
-                failedIdentifier = identifier
+                failedIdentifiers += identifier
             }
             // Kennung nicht aufloesbar (z. B. OCR-Zahlendreher) → Namens-Pfad weiter.
             hint.value = "Kennung nicht eindeutig – suche per Name weiter."
@@ -276,10 +435,19 @@ class ScannerViewModel(
 
     private fun searchByName(name: String) {
         lastSearched = normalize(name)
-        state.value = ScanState.Searching(name)
+        val fingerprint = lastFingerprint
+        // Suche aufs erkannte Spiel begrenzen: das haelt Treffer anderer
+        // Spiele komplett raus. Ohne Treffer weitet ein zweiter Versuch
+        // die Suche auf alle Spiele aus (falls die Erkennung daneben lag).
+        val game = gameFilter.value ?: detectedGame.value
+        state.value = ScanState.Resolving(name)
         searchJob = viewModelScope.launch {
-            val result = runCatching { repository.search(name, gameFilter.value) }
-            val cards = rankByRelevance(result.getOrDefault(emptyList()), name)
+            var result = runCatching { repository.search(name, game) }
+            var cards = rankByRelevance(result.getOrDefault(emptyList()), name)
+            if (cards.isEmpty() && game != null && gameFilter.value == null) {
+                result = runCatching { repository.search(name, null) }
+                cards = rankByRelevance(result.getOrDefault(emptyList()), name)
+            }
             if (cards.isEmpty()) {
                 hint.value = if (result.isFailure) {
                     "Netzwerkfehler – bitte erneut versuchen."
@@ -288,43 +456,61 @@ class ScannerViewModel(
                 }
                 state.value = ScanState.Scanning
             } else {
-                onCardsFound(name, cards)
+                onCardsFound(name, cards, fingerprint, nameMatches(cards.first().name, name))
             }
         }
     }
 
     /**
-     * Trefferbehandlung: im Stapel-Modus wird der beste Treffer sofort erfasst
-     * und weitergescannt (ManaBox-Workflow), sonst oeffnet das Ergebnis-Sheet.
-     * Vorher werden die Kandidaten visuell (Perceptual Hash) neu sortiert, damit
-     * bei mehreren namensgleichen Drucken die tatsaechlich gehaltene Edition
-     * gewinnt — auch wenn OCR den Set-Code nicht lesen konnte.
+     * Trefferbehandlung mit Zwei-Signale-Regel: automatisch in die Session
+     * wandert eine Karte nur, wenn neben der Kennung mindestens ein zweites
+     * unabhaengiges Signal zustimmt — der OCR-Name ODER der visuelle Abgleich
+     * (Perceptual Hash des entzerrten Kartenbilds, sprachunabhaengig).
+     * Andernfalls oeffnet der Editions-Waehler, statt still eine falsche
+     * Karte zu erfassen.
      */
-    private suspend fun onCardsFound(label: String, cards: List<TcgCard>) {
-        val (ranked, confidence) = rankVisually(cards)
-        if (batchMode.value) {
+    private suspend fun onCardsFound(
+        label: String,
+        cards: List<TcgCard>,
+        fingerprint: PerceptualHash.Fingerprint?,
+        nameAgrees: Boolean
+    ) {
+        val (ranked, confidence) = rankVisually(cards, fingerprint)
+        val trusted = nameAgrees || confidence >= 0.5f
+        if (trusted) {
             val best = ranked.first()
-            addToBatch(best)
-            hint.value = if (confidence >= 0.75f || ranked.size == 1) {
-                "✓ ${best.name} erfasst – nächste Karte"
-            } else {
-                "✓ ${best.name} erfasst (Edition prüfen) – nächste Karte"
+            if (addToSession(best)) {
+                hint.value = if (confidence >= 0.75f || ranked.size == 1) {
+                    "✓ ${best.name} erfasst"
+                } else {
+                    "✓ ${best.name} erfasst – Edition im Stapel prüfbar"
+                }
             }
             resumeForNextScan()
         } else {
-            state.value = ScanState.Results(label, ranked)
+            state.value = ScanState.ConfirmPick(label, ranked)
         }
+    }
+
+    /** Auswahl aus dem Editions-Waehler in die Session uebernehmen. */
+    fun addFromConfirm(card: TcgCard) {
+        addToSession(card)
+        hint.value = "✓ ${card.name} erfasst"
+        resumeScanning(keepHint = true)
     }
 
     /**
      * Sortiert die Kandidaten nach visueller Aehnlichkeit zum gescannten Bild.
      * Liefert die (ggf. neu geordnete) Liste plus ein Vertrauensmass 0..1.
+     * Auch bei nur einem Kandidaten wird verglichen — als Bestaetigung.
      */
-    private suspend fun rankVisually(cards: List<TcgCard>): Pair<List<TcgCard>, Float> {
-        val fingerprint = lastFingerprint
-        if (fingerprint == null || cards.size < 2) return cards to 0f
+    private suspend fun rankVisually(
+        cards: List<TcgCard>,
+        fingerprint: PerceptualHash.Fingerprint?
+    ): Pair<List<TcgCard>, Float> {
+        if (fingerprint == null || cards.isEmpty()) return cards to 0f
         // Nur die textlich relevantesten Kandidaten visuell pruefen — begrenzt
-        // die Zahl der Bild-Downloads und damit die Latenz im Stapel-Scan.
+        // die Zahl der Bild-Downloads und damit die Latenz.
         val head = cards.take(VISUAL_MATCH_LIMIT)
         val tail = cards.drop(VISUAL_MATCH_LIMIT)
         val ranked = runCatching { matcher.rank(fingerprint, head) }.getOrNull()
@@ -332,33 +518,27 @@ class ScannerViewModel(
         return (ranked.cards + tail) to ranked.confidence
     }
 
-    /** Wie resumeScanning, behaelt aber Hinweis und Stapel. */
+    /** Erkennungs-Evidenz zuruecksetzen, Hinweis und Session behalten. */
     private fun resumeForNextScan() {
         state.value = ScanState.Scanning
         detectedLabel.value = null
+        detectedGame.value = null
         nameCandidate.value = null
         recentNames.clear()
+        recentGames.clear()
         displayText.clear()
         lastSearched = null
         recentIdentifiers.clear()
         stableIdentifier = null
-        failedIdentifier = null
+        failedIdentifiers.clear()
     }
 
-    /** Nach Schliessen des Ergebnis-Sheets weiterscannen. */
-    fun resumeScanning() {
+    /** Nach Schliessen des Editions-Waehlers weiterscannen. */
+    fun resumeScanning(keepHint: Boolean = false) {
         searchJob?.cancel()
         searchJob = null
-        state.value = ScanState.Scanning
-        detectedLabel.value = null
-        nameCandidate.value = null
-        hint.value = null
-        recentNames.clear()
-        displayText.clear()
-        lastSearched = null
-        recentIdentifiers.clear()
-        stableIdentifier = null
-        failedIdentifier = null
+        if (!keepHint) hint.value = null
+        resumeForNextScan()
     }
 
     private companion object {
@@ -366,7 +546,10 @@ class ScannerViewModel(
         const val MIN_VOTES = 3
         const val ID_WINDOW = 8
         const val ID_VOTES = 2
+        const val GAME_WINDOW = 8
+        const val GAME_VOTES = 2
         const val VISUAL_MATCH_LIMIT = 12
+        const val DUPLICATE_COOLDOWN_MS = 2000L
     }
 }
 
@@ -397,6 +580,19 @@ private fun levenshtein(a: String, b: String): Int {
 /** Tippfehlertoleranter Vergleich (erlaubt ~1 Fehler pro 6 Zeichen). */
 private fun fuzzyEquals(a: String, b: String): Boolean =
     a == b || levenshtein(a, b) <= maxOf(1, minOf(a.length, b.length) / 6)
+
+/**
+ * Namens-Gegenprobe zwischen aufgeloester Karte und OCR-Lesung: tolerant
+ * gegenueber Zusaetzen ("Charizard ex" vs. "Charizard", Untertitel) und
+ * kleinen OCR-Fehlern, aber ein komplett anderer Name faellt durch.
+ */
+private fun nameMatches(cardName: String, ocrName: String): Boolean {
+    val a = normalize(cardName)
+    val b = normalize(ocrName)
+    if (a.isEmpty() || b.isEmpty()) return false
+    return a.contains(b) || b.contains(a) || fuzzyEquals(a, b) ||
+        fuzzyEquals(a.take(12), b.take(12))
+}
 
 /** Sortiert Treffer nach Namensaehnlichkeit zur OCR-Anfrage (stabil). */
 private fun rankByRelevance(cards: List<TcgCard>, query: String): List<TcgCard> {

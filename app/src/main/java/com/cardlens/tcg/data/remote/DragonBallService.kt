@@ -21,6 +21,13 @@ interface DragonBallService {
         @Query("limit") limit: Int = 40
     ): DbList
 
+    /** Exakter Lookup ueber den aufgedruckten Karten-Code, z. B. "FB01-001". */
+    @GET("api/dragon-ball-fusion/cards")
+    suspend fun byCode(
+        @Query("code") code: String,
+        @Query("limit") limit: Int = 10
+    ): DbList
+
     companion object {
         const val BASE_URL = "https://apitcg.com/"
     }

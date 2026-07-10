@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#14121F</color>
+    <!-- Tiefes Nachtblau passend zum Karten-Artwork des Icons -->
+    <color name="ic_launcher_background">#0B1322</color>
     <color name="window_background">#14121F</color>
 </resources>

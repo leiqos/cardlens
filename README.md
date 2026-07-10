@@ -36,20 +36,39 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 ## Features
 
 ### 📷 Scanner
-- **Identifier-first Scanner** – liest per On-Device-OCR (ML Kit) zuerst die
+- **Echte Kartenerkennung mit Entzerrung** – die Pipeline findet die
+  physischen Kartenkanten im Suchband um den Zielrahmen (Gradienten-Analyse),
+  schneidet die Karte perspektivisch korrekt auf ein kanonisches 63:88-Bild
+  zu und arbeitet erst dann: OCR und Bildabgleich sehen eine *flache,
+  entzerrte Karte* statt eines schiefen Kamera-Ausschnitts. Die erkannten
+  Kanten werden live im Sucher angezeigt; angezeigter Rahmen und analysierter
+  Bereich teilen sich exakt dieselbe Geometrie (FILL_CENTER-Mapping).
+- **Identifier-first Erkennung** – On-Device-OCR (ML Kit) liest zuerst die
   aufgedruckte Druck-Kennung (Magic: Set·Nummer, Pokémon: Nummer/Setgröße,
-  Yu-Gi-Oh!: Passcode & Set-Code, One Piece: Karten-ID, Lorcana: Nummer·Set)
-  → ein API-Call, exakte Edition. Name als Fallback. Mit Ecken-Zoom-Zweitpass,
-  Frame-Voting, Autofokus, Zielrahmen-Gating, Taschenlampe und Spiel-Filter.
-- **Visueller Editions-Abgleich (Perceptual Hash)** – aus dem Kamerabild wird
-  ein Bild-Fingerabdruck der Kartenregion (dHash + aHash) berechnet und mit den
-  Bildern der Treffer-Kandidaten verglichen. So gewinnt bei vielen namensgleichen
-  Drucken (z. B. 64× „Lightning Bolt") die *tatsächlich gehaltene* Edition —
-  sprach- und OCR-unabhängig, für **alle** TCGs. Im Stapel-Scan wird bei
-  unsicherem Treffer ein „Edition prüfen"-Hinweis gesetzt statt blind zu raten.
-- **Stapel-Scan** – Session-Modus: Karte für Karte scannen, automatisches
-  Erfassen mit Haptik, laufender Gesamtwert, Review-Sheet mit
-  **Foil-/Zustands-Schnelleinstellung** pro Karte, Ein-Klick-Übernahme.
+  Yu-Gi-Oh!: Passcode & Set-Code, One Piece & Dragon Ball: Karten-ID,
+  Lorcana: Nummer·Set, Star Wars: Unlimited: Set·Nummer)
+  → ein API-Call, exakte Edition. Name als Fallback. Mit Kennungs-Zoom auf dem
+  unteren Kartenband, Frame-Voting, Autofokus, Schwachlicht-Hinweis,
+  Taschenlampe und Spiel-Filter.
+- **Zwei-Signale-Regel gegen Fehlerkennungen** – automatisch erfasst wird nur,
+  wenn neben der Kennung ein zweites unabhängiges Signal zustimmt: der
+  OCR-Kartenname **oder** der visuelle Bildabgleich. Dazu kommen
+  Plausibilitäts-Checks vor jedem Lookup (Scryfall-Set-Whitelist,
+  Nummern-Bereiche) und eine Reparatur typischer OCR-Verwechsler (O↔0, I↔1 …).
+  Kennung + Name im selben Frame lösen die Suche **sofort** aus.
+- **Visueller Editions-Abgleich (Perceptual Hash)** – vom entzerrten
+  Kartenbild wird ein Fingerabdruck (dHash + aHash, ganze Karte **und**
+  Artwork-Region) berechnet und mit den Bildern der Treffer-Kandidaten
+  verglichen. So gewinnt bei vielen namensgleichen Drucken (z. B. 64×
+  „Lightning Bolt") die *tatsächlich gehaltene* Edition — sprach- und
+  OCR-unabhängig, für **alle** TCGs.
+- **Session-first wie ManaBox** – jede sicher erkannte Karte wandert sofort
+  mit Haptik und grünem Blitz in den Session-Stapel, ohne den Scan-Fluss zu
+  unterbrechen: unten im Tray die letzte Karte mit Edition, Preis und
+  Undo, dazu laufender Gesamtwert. Bei mehrdeutigen Treffern öffnet ein
+  **Editions-Wähler** statt stiller Fehlerfassung. Review-Sheet mit
+  Foil-/Zustands-/Mengen-Schnelleinstellung pro Karte, Ein-Klick-Übernahme
+  in die Sammlung, Duplikat-Bremse gegen Doppelerfassung.
 - Standard-Zustand & -Sprache für neue Karten konfigurierbar.
 
 ### 🗂️ Sammlung
@@ -152,9 +171,11 @@ app/src/main/java/com/cardlens/tcg/
 │   ├── CardRepository.kt   Parallele Suche über alle APIs + Cache
 │   ├── CsvPort.kt          CSV-Import/-Export + Text-Decklisten (RFC-4180-Parser)
 │   └── SettingsStore.kt    Währung, Theme, Standard-Zustand/-Sprache
-├── scan/                  Perceptual Hash (dHash/aHash) + visueller Karten-Abgleich
+├── scan/                  Scan-Pipeline: Kantenerkennung (CardDetector),
+│                          perspektivische Entzerrung + OCR (ScanAnalyzer),
+│                          Perceptual Hash + visueller Karten-Abgleich
 └── ui/
-    ├── scanner/            CameraX + ML Kit OCR + pHash-Fingerprint + Stapel-Scan
+    ├── scanner/            CameraX-Anbindung, Live-Overlay, Session-Tray
     ├── search/             Live-Suche, Filter-Sheet, Autocomplete, Verlauf
     ├── detail/             Details, Editionen, Rulings, Legalitäten, Deck-Aktion
     ├── collection/         Dashboard, Binder, Bulk-Edit, CSV, Wertverlauf

@@ -74,13 +74,31 @@ class CardRepository(
                     onePiece.byCardSetId(identifier.cardSetId)
                 is CardIdentifier.Lorcana ->
                     listOf(lorcast.byNumber(identifier.setNumber, identifier.number).toTcgCard())
+                is CardIdentifier.StarWars ->
+                    listOf(swu.byNumber(identifier.setCode.uppercase(), identifier.number).toTcgCard())
+                is CardIdentifier.DragonBall ->
+                    dragonBall.byCode(identifier.code).all.mapNotNull { it.toTcgCard() }
             }
         } catch (e: HttpException) {
-            if (e.code() == 404 || e.code() == 400) emptyList() else throw e
+            // 401/403/422: apitcg ohne Key bzw. Parameter ausserhalb des Bereichs.
+            if (e.code() in intArrayOf(400, 401, 403, 404, 422)) emptyList() else throw e
         }
         cards.forEach(::remember)
         return cards
     }
+
+    /**
+     * Alle gueltigen Magic-Set-Codes (Scryfall-Katalog) — der Scanner nutzt
+     * sie als Whitelist, damit falsch gelesene Set-Codes ("M1D") gar nicht
+     * erst einen Lookup ausloesen. Einmal pro Sitzung geladen; `null`,
+     * solange (noch) keine Liste verfuegbar ist.
+     */
+    @Volatile
+    private var magicSets: Set<String>? = null
+
+    suspend fun magicSetCodes(): Set<String>? = magicSets ?: runCatching {
+        scryfall.sets().data.map { it.code.uppercase() }.toSet()
+    }.getOrNull()?.also { magicSets = it }
 
     /**
      * Vollstaendige Riftbound-Karte (Werte, Text, grosses Bild). Die Suche

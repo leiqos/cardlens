@@ -1,24 +1,32 @@
-package com.cardlens.tcg.ui.scanner
+package com.cardlens.tcg.scan
 
 import com.cardlens.tcg.model.CardIdentifier
 import com.cardlens.tcg.model.CardIdentifierDetector
+import com.cardlens.tcg.model.GameClassifier
+import com.cardlens.tcg.model.TcgGame
 import com.google.mlkit.vision.text.Text
 
-/** Ergebnis der Analyse eines Kamerabilds. */
+/** Ergebnis der Analyse eines entzerrten Kartenbilds. */
 data class ScanReading(
     val nameCandidate: String?,
     val identifiers: List<CardIdentifier>,
-    val linesInFrame: Int
+    val linesInFrame: Int,
+    /** Aus den gedruckten Merkmalen erkanntes Spiel (null = unklar). */
+    val gameHint: TcgGame? = null
 )
 
 /**
- * Liest aus dem OCR-Ergebnis eines Kamerabilds:
+ * Liest aus dem OCR-Ergebnis eines perspektivisch entzerrten Kartenbilds:
  *  1. aufgedruckte Druck-Kennungen (Set-Code+Nummer, Passcode, Karten-ID …)
  *     — die identifizieren Spiel UND exakte Edition,
- *  2. den Kartennamen als Fallback (grosse Zeile oben bzw. unten bei One Piece).
+ *  2. den Kartennamen als Fallback.
  *
- * Es zaehlt nur Text innerhalb des Zielrahmens — Text ausserhalb (Buecher,
- * Tastaturen, Hintergrund) wird ignoriert.
+ * Weil das Bild bereits exakt auf die Karte zugeschnitten ist, sind die
+ * Namenszonen kartenrelativ und deutlich enger als frueher am Vollbild:
+ *  - oben (≤ 22 %): Magic, Pokémon, Yu-Gi-Oh!, Star Wars, Dragon Ball
+ *  - Mitte (48–70 %): Lorcana (Name unter dem Artwork)
+ *  - unten (72–93 %): One Piece (Namensbanner)
+ * Der Faehigkeitstext dazwischen wird ignoriert.
  */
 object CardNameExtractor {
 
@@ -38,33 +46,35 @@ object CardNameExtractor {
         "HP", "KP", "LV", "LEVEL", "CARD", "KARTE"
     )
 
-    // Zielrahmen-Region im Analysebild (relativ). Grosszuegig gefasst, weil
-    // Vorschau- und Analyse-Ausschnitt nicht exakt deckungsgleich sind.
-    private const val FRAME_LEFT = 0.06f
-    private const val FRAME_RIGHT = 0.94f
-    private const val FRAME_TOP = 0.08f
-    private const val FRAME_BOTTOM = 0.96f
+    /**
+     * Ohne Karte im Rahmen liefert die Rueckfall-Entzerrung Hintergrund
+     * (Buchseiten, Verpackungen) — dichter Fliesstext hat viele Zeilen,
+     * dann wird kein Name geraten.
+     */
+    private const val MAX_LINES_FOR_NAME = 26
 
-    /** Dichter Fliesstext (Buchseite) hat viele Zeilen — dann keinen Namen raten. */
-    private const val MAX_LINES_FOR_NAME = 16
+    /**
+     * Nummern-Zone: unterster Kartenstreifen, in dem Sammlernummer und
+     * Set-Code gedruckt sind. Manakosten (oben rechts), Kampfwerte und
+     * Loyalitaet liegen darueber und duerfen nie als Sammlernummer zaehlen.
+     */
+    const val NUMBER_ZONE_TOP = 0.78f
 
     fun extract(text: Text, imageWidth: Int, imageHeight: Int): ScanReading {
         if (imageHeight <= 0 || imageWidth <= 0) return ScanReading(null, emptyList(), 0)
 
-        val framedLines = text.textBlocks
-            .flatMap { it.lines }
-            .filter { line ->
-                val box = line.boundingBox ?: return@filter false
-                val cx = box.centerX().toFloat() / imageWidth
-                val cy = box.centerY().toFloat() / imageHeight
-                cx in FRAME_LEFT..FRAME_RIGHT && cy in FRAME_TOP..FRAME_BOTTOM
-            }
+        val lines = text.textBlocks.flatMap { it.lines }.filter { it.boundingBox != null }
+        val lineTexts = lines.map { it.text }
+        val numberZone = lines
+            .filter { it.boundingBox!!.top >= imageHeight * NUMBER_ZONE_TOP }
+            .sortedBy { it.boundingBox!!.top }
+            .map { it.text }
+        val identifiers = CardIdentifierDetector.detect(lineTexts, numberZone)
+        val gameHint = GameClassifier.classify(lineTexts)
 
-        val identifiers = CardIdentifierDetector.detect(framedLines.map { it.text })
-
-        val name = if (framedLines.size in 2..MAX_LINES_FOR_NAME) {
-            val minLineHeight = imageHeight * 0.02f
-            framedLines
+        val name = if (lines.size in 2..MAX_LINES_FOR_NAME) {
+            val minLineHeight = imageHeight * 0.025f
+            lines
                 .mapNotNull { line -> score(line, imageHeight, minLineHeight) }
                 .maxByOrNull { it.second }
                 ?.first
@@ -72,7 +82,7 @@ object CardNameExtractor {
             null // zu wenig Kontext (einzelne Woerter) oder Fliesstext
         }
 
-        return ScanReading(name, identifiers, framedLines.size)
+        return ScanReading(name, identifiers, lines.size, gameHint)
     }
 
     private fun score(line: Text.Line, imageHeight: Int, minLineHeight: Float): Pair<String, Float>? {
@@ -80,12 +90,11 @@ object CardNameExtractor {
         if (box.height() < minLineHeight) return null
         val topRatio = box.top.toFloat() / imageHeight
 
-        // Zwei Namenszonen: oben (Magic, Pokémon, Yu-Gi-Oh!, Lorcana) und
-        // unten (One Piece druckt den Namen im unteren Kartenbanner).
-        // Die Kartenmitte (Faehigkeitstext) wird ignoriert.
+        // Kartenrelative Namenszonen; die Mitte (Faehigkeitstext) faellt raus.
         val zoneWeight = when {
-            topRatio <= 0.55f -> 1.5f - topRatio
-            topRatio >= 0.72f -> 0.8f
+            topRatio <= 0.22f -> 1.6f - topRatio
+            topRatio in 0.48f..0.70f -> 0.7f
+            topRatio in 0.72f..0.93f -> 0.8f
             else -> return null
         }
 

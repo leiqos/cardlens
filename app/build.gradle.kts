@@ -14,8 +14,8 @@ android {
         applicationId = "com.cardlens.tcg"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "2.2.0"
+        versionCode = 6
+        versionName = "3.0.0"
 
         val pokemonKey = providers.gradleProperty("POKEMON_API_KEY").orNull ?: ""
         buildConfigField("String", "POKEMON_API_KEY", "\"$pokemonKey\"")
@@ -91,4 +91,7 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
 
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
+
+    // Unit-Tests (Kennungs-Erkennung des Scanners)
+    testImplementation("junit:junit:4.13.2")
 }
