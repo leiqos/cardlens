@@ -14,8 +14,8 @@ android {
         applicationId = "com.cardlens.tcg"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "3.0.0"
+        versionCode = 7
+        versionName = "3.0.1"
 
         val pokemonKey = providers.gradleProperty("POKEMON_API_KEY").orNull ?: ""
         buildConfigField("String", "POKEMON_API_KEY", "\"$pokemonKey\"")

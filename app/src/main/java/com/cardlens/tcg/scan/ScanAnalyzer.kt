@@ -153,8 +153,13 @@ class ScanAnalyzer(
     private fun zoomPass(card: Bitmap) {
         val top = (card.height * 0.55f).toInt()
         val band = Bitmap.createBitmap(card, 0, top, card.width, card.height - top)
-        val zoomed = Bitmap.createScaledBitmap(band, band.width * 2, band.height * 2, true)
+        val scaled = Bitmap.createScaledBitmap(band, band.width * 2, band.height * 2, true)
         band.recycle()
+        // Kontrast strecken: Karten-IDs sind oft Goldfolie auf buntem Artwork
+        // (One Piece, Dragon Ball) — mit niedrigem Kontrast liest ML Kit sie
+        // nicht. Graustufen + Perzentil-Streckung macht den Kleindruck lesbar.
+        val zoomed = enhanceContrast(scaled)
+        if (zoomed != scaled) scaled.recycle()
         recognizer.process(InputImage.fromBitmap(zoomed, 0))
             .addOnSuccessListener { text ->
                 val lines = text.textBlocks.flatMap { it.lines }
@@ -239,6 +244,41 @@ class ScanAnalyzer(
             return src.copy(Bitmap.Config.ARGB_8888, false)
         }
         Canvas(out).drawBitmap(src, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+        return out
+    }
+
+    /**
+     * Graustufen-Kontrastspreizung (5.-95. Luminanz-Perzentil auf 0..255).
+     * Liefert das Original zurueck, wenn der Kontrast bereits ausreicht.
+     */
+    private fun enhanceContrast(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val px = IntArray(w * h)
+        src.getPixels(px, 0, w, 0, 0, w, h)
+
+        val hist = IntArray(256)
+        for (p in px) {
+            hist[((p shr 16 and 0xFF) * 299 + (p shr 8 and 0xFF) * 587 + (p and 0xFF) * 114) / 1000]++
+        }
+        val total = w * h
+        var acc = 0
+        var low = 0
+        while (low < 255 && acc + hist[low] < total / 20) { acc += hist[low]; low++ }
+        acc = 0
+        var high = 255
+        while (high > 0 && acc + hist[high] < total / 20) { acc += hist[high]; high-- }
+        val range = high - low
+        if (range <= 0 || range > 200) return src // Kontrast reicht schon
+
+        for (i in px.indices) {
+            val p = px[i]
+            val luma = ((p shr 16 and 0xFF) * 299 + (p shr 8 and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+            val v = ((luma - low) * 255 / range).coerceIn(0, 255)
+            px[i] = 0xFF shl 24 or (v shl 16) or (v shl 8) or v
+        }
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(px, 0, w, 0, 0, w, h)
         return out
     }
 

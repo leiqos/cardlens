@@ -406,7 +406,7 @@ class ScannerViewModel(
                     // fast nie zu einer Karte auf, deren Name auch noch passt.
                     val nameAgrees = ocrName == null || cards.any { nameMatches(it.name, ocrName) }
                     if (nameAgrees) {
-                        onCardsFound(identifier.display, cards, fingerprint, true)
+                        onCardsFound(identifier.display, cards, fingerprint, true, exactEdition = true)
                     } else {
                         // Kennung und gelesener Name widersprechen sich —
                         // vermutlich eine Fehllesung der Nummer. Beide
@@ -419,7 +419,10 @@ class ScannerViewModel(
                             }.getOrDefault(emptyList()).let { rankByRelevance(it, name) }
                         }.orEmpty()
                         val merged = (cards + byName).distinctBy { it.id }
-                        onCardsFound(identifier.display, merged, fingerprint, nameAgrees = false)
+                        onCardsFound(
+                            identifier.display, merged, fingerprint,
+                            nameAgrees = false, exactEdition = false
+                        )
                     }
                     return@launch
                 }
@@ -456,7 +459,11 @@ class ScannerViewModel(
                 }
                 state.value = ScanState.Scanning
             } else {
-                onCardsFound(name, cards, fingerprint, nameMatches(cards.first().name, name))
+                onCardsFound(
+                    name, cards, fingerprint,
+                    nameMatches(cards.first().name, name),
+                    exactEdition = false
+                )
             }
         }
     }
@@ -473,10 +480,23 @@ class ScannerViewModel(
         label: String,
         cards: List<TcgCard>,
         fingerprint: PerceptualHash.Fingerprint?,
-        nameAgrees: Boolean
+        nameAgrees: Boolean,
+        exactEdition: Boolean
     ) {
         val (ranked, confidence) = rankVisually(cards, fingerprint)
-        val trusted = nameAgrees || confidence >= 0.5f
+
+        // Editions-Mehrdeutigkeit: bei einem reinen Namens-Treffer mit
+        // mehreren gleichnamigen Drucken (One Piece druckt z. B. dutzende
+        // "Monkey.D.Luffy") sagt der Name NICHTS ueber die Edition. Dann
+        // darf nur ein klarer visueller Treffer automatisch erfassen —
+        // sonst waehlt der Nutzer im Editions-Waehler.
+        val topName = normalize(ranked.first().name)
+        val sameNamePrints = ranked.count { normalize(it.name) == topName }
+        val trusted = when {
+            exactEdition -> nameAgrees || confidence >= 0.5f
+            sameNamePrints > 1 -> confidence >= 0.75f
+            else -> nameAgrees || confidence >= 0.5f
+        }
         if (trusted) {
             val best = ranked.first()
             if (addToSession(best)) {
