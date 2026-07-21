@@ -123,7 +123,7 @@ class AppContainer(context: Context) {
         AppDatabase::class.java,
         "cardlens.db"
     )
-        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
         .build()
 
     val collectionDao: CollectionDao = database.collectionDao()

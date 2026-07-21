@@ -58,6 +58,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -86,6 +87,7 @@ import com.cardlens.tcg.model.formatPrice
 import com.cardlens.tcg.ui.components.CardImage
 import com.cardlens.tcg.ui.components.EmptyState
 import com.cardlens.tcg.ui.components.GameFilterRow
+import com.cardlens.tcg.ui.components.LensHeroSurface
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -174,7 +176,19 @@ fun CollectionScreen(onOpenCard: (TcgCard) -> Unit) {
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Meine Sammlung") },
+                    title = {
+                        Column {
+                            Text(
+                                "COLLECT & TRACK",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Meine Sammlung", style = MaterialTheme.typography.headlineSmall)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    ),
                     actions = {
                         IconButton(onClick = {
                             viewModel.exportCsv { csv ->
@@ -388,10 +402,7 @@ private fun DashboardHeader(
     history: List<ValueSnapshot>,
     currency: String
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    ) {
+    LensHeroSurface {
         Column(Modifier.padding(16.dp)) {
             Text(
                 "Sammlungswert",
@@ -733,6 +744,11 @@ private fun EntryEditSheet(
                                 condition = condition,
                                 language = language,
                                 foil = foil,
+                                finish = when {
+                                    !foil -> "normal"
+                                    entry.finish != "normal" -> entry.finish
+                                    else -> "foil"
+                                },
                                 altered = altered,
                                 misprint = misprint,
                                 binderId = binderId,

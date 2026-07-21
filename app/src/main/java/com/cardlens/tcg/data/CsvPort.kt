@@ -50,7 +50,7 @@ object CsvPort {
                 e.setCode.orEmpty(),
                 e.setName.orEmpty(),
                 e.collectorNumber.orEmpty(),
-                if (e.foil) "foil" else "normal",
+                e.finish,
                 e.rarity.orEmpty(),
                 e.quantity.toString(),
                 scryfallId,
@@ -80,6 +80,7 @@ object CsvPort {
         val setName: String?,
         val collectorNumber: String?,
         val foil: Boolean,
+        val finish: String,
         val rarity: String?,
         val quantity: Int,
         val scryfallId: String?,
@@ -113,12 +114,20 @@ object CsvPort {
         }
         return records.drop(1).mapNotNull { rec ->
             val name = field(rec, "name") ?: return@mapNotNull null
+            val rawFinish = field(rec, "foil")?.lowercase()?.replace(' ', '_') ?: "normal"
+            val finish = when (rawFinish) {
+                "true" -> "foil"
+                "false" -> "normal"
+                "reverseholofoil", "reverse_holofoil" -> "reverse_holo"
+                else -> rawFinish
+            }
             CsvRow(
                 name = name,
                 setCode = field(rec, "set code", "set"),
                 setName = field(rec, "set name"),
                 collectorNumber = field(rec, "collector number", "number"),
-                foil = field(rec, "foil")?.lowercase()?.let { it == "foil" || it == "true" || it == "etched" } == true,
+                foil = finish != "normal",
+                finish = finish,
                 rarity = field(rec, "rarity"),
                 quantity = field(rec, "quantity", "count", "qty")?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
                 scryfallId = field(rec, "scryfall id"),

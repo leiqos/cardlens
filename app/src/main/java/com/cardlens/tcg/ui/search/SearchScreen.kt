@@ -72,6 +72,7 @@ import com.cardlens.tcg.model.primaryPrice
 import com.cardlens.tcg.ui.components.CardGridItem
 import com.cardlens.tcg.ui.components.EmptyState
 import com.cardlens.tcg.ui.components.GameFilterRow
+import com.cardlens.tcg.ui.components.ScreenHeader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -247,6 +248,12 @@ fun SearchScreen(onOpenCard: (TcgCard) -> Unit) {
     var showFilters by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
+        ScreenHeader(
+            eyebrow = "Entdecken",
+            title = "Karten finden",
+            subtitle = "Alle Spiele, Sets und Varianten an einem Ort",
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)
+        )
         // Suchfeld
         TextField(
             value = query,
@@ -277,12 +284,14 @@ fun SearchScreen(onOpenCard: (TcgCard) -> Unit) {
                 viewModel.searchNow()
             }),
             colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .focusRequester(focusRequester)
         )
 

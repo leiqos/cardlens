@@ -55,7 +55,14 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
   OCR-Kartenname **oder** der visuelle Bildabgleich. Dazu kommen
   Plausibilitäts-Checks vor jedem Lookup (Scryfall-Set-Whitelist,
   Nummern-Bereiche) und eine Reparatur typischer OCR-Verwechsler (O↔0, I↔1 …).
-  Kennung + Name im selben Frame lösen die Suche **sofort** aus.
+  Eine Kennung muss in mindestens zwei Frames stabil sein; OCR-Name und Nummer
+  aus demselben unscharfen Bild gelten bewusst nicht als unabhängige Signale.
+- **Varianten-sicher statt Varianten-raten** – One-Piece-Parallelkarten,
+  Dragon-Ball-Alt-Arts, Yu-Gi-Oh!-Reprints und Pokémon-Drucke können dieselbe
+  Basiskennung teilen. Diese landen nur bei einem klar getrennten visuellen
+  Treffer automatisch im Stapel, sonst zeigt CardLens einen begründeten
+  Versionsvergleich. Foil/Normal bleibt eine bewusste Bestätigung, weil Glanz
+  aus einem einzelnen Kamerabild nicht zuverlässig messbar ist.
 - **Visueller Editions-Abgleich (Perceptual Hash)** – vom entzerrten
   Kartenbild wird ein Fingerabdruck (dHash + aHash, ganze Karte **und**
   Artwork-Region) berechnet und mit den Bildern der Treffer-Kandidaten
@@ -154,7 +161,7 @@ Star-Wars- und Riftbound-Suche kommen ohne Key aus.
 
 Zum Scannen wird ein echtes Gerät mit Kamera empfohlen.
 Bestehende Sammlungen aus v1 werden beim ersten Start automatisch migriert
-(Room-Migration 1→2).
+(Room-Migrationen 1→2→3).
 
 ## Architektur
 
@@ -166,8 +173,8 @@ app/src/main/java/com/cardlens/tcg/
 ├── data/
 │   ├── remote/             Retrofit-Services + Mapper je TCG-API (inkl. Rulings,
 │   │                       Autocomplete, Legalitäten via Scryfall)
-│   ├── local/              Room v2: Sammlung (Varianten), Binder, Decks,
-│   │                       Favoriten, Wertverlauf — mit Migration 1→2
+│   ├── local/              Room v3: Sammlung (Varianten/Finishes), Binder, Decks,
+│   │                       Favoriten, Wertverlauf — mit Migrationen 1→2→3
 │   ├── CardRepository.kt   Parallele Suche über alle APIs + Cache
 │   ├── CsvPort.kt          CSV-Import/-Export + Text-Decklisten (RFC-4180-Parser)
 │   └── SettingsStore.kt    Währung, Theme, Standard-Zustand/-Sprache
@@ -189,6 +196,9 @@ app/src/main/java/com/cardlens/tcg/
 - **MVVM** mit `StateFlow`, ohne Hilt (bewusst schlanke, manuelle DI)
 - **kotlinx.serialization** für alle API-Antworten (tolerant gegenüber Schema-Änderungen)
 - Texterkennung läuft **komplett on-device** – keine Kartenbilder verlassen das Gerät
+
+Die Erkennungsregeln, belegbaren Schlüssel je TCG und verbleibenden Grenzen sind in
+[DETECTION_ARCHITECTURE.md](DETECTION_ARCHITECTURE.md) dokumentiert.
 
 ## Rechtliches
 

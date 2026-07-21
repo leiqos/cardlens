@@ -5,8 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Search
@@ -24,13 +28,18 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -83,7 +92,7 @@ private data class BottomItem(
 private val bottomItems = listOf(
     BottomItem("collection", "Sammlung", Icons.Filled.Style, Icons.Outlined.Style),
     BottomItem("decks", "Decks", Icons.Filled.ViewModule, Icons.Outlined.ViewModule),
-    BottomItem("scan", "Scannen", Icons.Filled.CenterFocusStrong, Icons.Outlined.CenterFocusWeak),
+    BottomItem("scan", "Scan", Icons.Filled.CenterFocusStrong, Icons.Outlined.CenterFocusWeak),
     BottomItem("search", "Suche", Icons.Filled.Search, Icons.Outlined.Search),
     BottomItem("settings", "Mehr", Icons.Filled.Tune, Icons.Outlined.Tune)
 )
@@ -94,39 +103,97 @@ fun NavHostController.openCard(card: TcgCard) {
 
 @Composable
 fun CardLensNavHost() {
+    val app = LocalContext.current.applicationContext as CardLensApp
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = bottomItems.any { it.route == currentRoute }
+    val openCard: (TcgCard) -> Unit = { card ->
+        // Detail routes carry only the stable ID. Keep the full snapshot that
+        // collection/deck/search rows already have so details also work offline.
+        app.container.repository.remember(card)
+        navController.openCard(card)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    bottomItems.forEach { item ->
-                        NavigationBarItem(
-                            selected = currentRoute == item.route,
-                            onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+                    shadowElevation = 10.dp
+                ) {
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp
+                    ) {
+                        bottomItems.forEach { item ->
+                            val selected = currentRoute == item.route
+                            val isScanner = item.route == "scan"
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    navController.navigate(item.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = if (currentRoute == item.route) item.selectedIcon else item.icon,
-                                    contentDescription = item.label
+                                },
+                                icon = {
+                                    if (isScanner) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .background(
+                                                    brush = if (selected) {
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                MaterialTheme.colorScheme.primary,
+                                                                MaterialTheme.colorScheme.secondary
+                                                            )
+                                                        )
+                                                    } else {
+                                                        Brush.linearGradient(
+                                                            listOf(
+                                                                MaterialTheme.colorScheme.primaryContainer,
+                                                                MaterialTheme.colorScheme.secondaryContainer
+                                                            )
+                                                        )
+                                                    },
+                                                    shape = RoundedCornerShape(14.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CenterFocusStrong,
+                                                contentDescription = item.label,
+                                                tint = if (selected) MaterialTheme.colorScheme.onPrimary
+                                                else MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(23.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            imageVector = if (selected) item.selectedIcon else item.icon,
+                                            contentDescription = item.label,
+                                            modifier = Modifier.size(23.dp)
+                                        )
+                                    }
+                                },
+                                label = { Text(item.label, style = MaterialTheme.typography.labelSmall) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    indicatorColor = if (isScanner) Color.Transparent
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                                 )
-                            },
-                            label = { Text(item.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -138,16 +205,16 @@ fun CardLensNavHost() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("collection") {
-                CollectionScreen(onOpenCard = { navController.openCard(it) })
+                CollectionScreen(onOpenCard = openCard)
             }
             composable("decks") {
                 DecksScreen(onOpenDeck = { navController.navigate("deck/$it") })
             }
             composable("scan") {
-                ScannerScreen(onOpenCard = { navController.openCard(it) })
+                ScannerScreen(onOpenCard = openCard)
             }
             composable("search") {
-                SearchScreen(onOpenCard = { navController.openCard(it) })
+                SearchScreen(onOpenCard = openCard)
             }
             composable("settings") {
                 SettingsScreen(onOpenTrade = { navController.navigate("trade") })
@@ -155,7 +222,7 @@ fun CardLensNavHost() {
             composable("trade") {
                 TradeScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenCard = { navController.openCard(it) }
+                    onOpenCard = openCard
                 )
             }
             composable(
@@ -166,7 +233,7 @@ fun CardLensNavHost() {
                 DeckDetailScreen(
                     deckId = deckId,
                     onBack = { navController.popBackStack() },
-                    onOpenCard = { navController.openCard(it) }
+                    onOpenCard = openCard
                 )
             }
             composable("card/{cardId}") { entry ->

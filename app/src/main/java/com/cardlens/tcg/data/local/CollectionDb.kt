@@ -41,6 +41,8 @@ data class CollectionEntry(
     val condition: String = "NM",     // CardCondition.code
     val language: String = "en",      // CardLanguage.code
     val foil: Boolean = false,
+    /** normal, foil, reverse_holo, etched, textured, serialized, other */
+    val finish: String = "normal",
     val altered: Boolean = false,
     val misprint: Boolean = false,
     val purchasePrice: Double? = null,
@@ -120,7 +122,7 @@ interface CollectionDao {
     @Query(
         """SELECT * FROM collection_entries
            WHERE cardId = :cardId AND wishlist = :wishlist AND condition = :condition
-             AND language = :language AND foil = :foil
+             AND language = :language AND foil = :foil AND finish = :finish
              AND ((:binderId IS NULL AND binderId IS NULL) OR binderId = :binderId)
            LIMIT 1"""
     )
@@ -130,6 +132,7 @@ interface CollectionDao {
         condition: String,
         language: String,
         foil: Boolean,
+        finish: String,
         binderId: Long?
     ): CollectionEntry?
 
@@ -256,7 +259,7 @@ interface ValueSnapshotDao {
         CollectionEntry::class, Binder::class, Deck::class,
         DeckCard::class, Favorite::class, ValueSnapshot::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -358,6 +361,16 @@ abstract class AppDatabase : RoomDatabase() {
                         cardCount INTEGER NOT NULL
                     )"""
                 )
+            }
+        }
+
+        /** v2 → v3: preserve finishes that cannot be represented by a foil boolean. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE collection_entries ADD COLUMN finish TEXT NOT NULL DEFAULT 'normal'"
+                )
+                db.execSQL("UPDATE collection_entries SET finish = 'foil' WHERE foil = 1")
             }
         }
     }

@@ -25,6 +25,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +37,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -104,8 +104,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardlens.tcg.CardLensApp
 import com.cardlens.tcg.model.TcgCard
+import com.cardlens.tcg.model.TcgGame
 import com.cardlens.tcg.model.formatPrice
-import com.cardlens.tcg.model.primaryPrice
 import com.cardlens.tcg.scan.ScanGuide
 import com.cardlens.tcg.ui.components.CardImage
 import com.cardlens.tcg.ui.components.EmptyState
@@ -209,7 +209,10 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 ResolutionSelector.Builder()
                     .setResolutionStrategy(
                         ResolutionStrategy(
-                            Size(1280, 960),
+                            // Footer microprint is the primary key. Prefer a
+                            // 3 MP analysis stream; CameraX falls back when a
+                            // device cannot provide it.
+                            Size(1920, 1440),
                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                         )
                     )
@@ -389,6 +392,33 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
             }
         }
 
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 72.dp),
+            shape = RoundedCornerShape(100.dp),
+            color = Color.Black.copy(alpha = 0.56f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(7.dp),
+                    shape = RoundedCornerShape(100.dp),
+                    color = accent
+                ) {}
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    "LIVE · SMART SCAN",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White
+                )
+            }
+        }
+
         // Session-Tray unten (ManaBox-Prinzip): Status, letzte Karte, Summe
         Column(
             modifier = Modifier
@@ -400,15 +430,29 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                tonalElevation = 3.dp
+                tonalElevation = 3.dp,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                )
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    val last = session.lastOrNull()
                     // Status-Zeile
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isResolving) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        } else if (last != null) {
+                            CardImage(
+                                url = last.card.imageSmall ?: last.card.imageLarge,
+                                contentDescription = last.card.name,
+                                modifier = Modifier
+                                    .width(34.dp)
+                                    .clickable { onOpenCard(last.card) }
                             )
                             Spacer(Modifier.width(10.dp))
                         }
@@ -430,7 +474,7 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                     ?: if (lowLight && !torchOn) {
                                         "Wenig Licht – Taschenlampe einschalten."
                                     } else {
-                                        "Kennung, Name und Bild werden automatisch abgeglichen."
+                                        scannerInstruction(detectedGame)
                                     },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (hint != null || (lowLight && !torchOn)) {
@@ -438,7 +482,7 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -456,56 +500,13 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                         }
                     }
 
-                    // Zuletzt erfasste Karte + Session-Summe
-                    val last = session.lastOrNull()
+                    // Compact session controls: do not grow over the camera
+                    // preview as more cards are captured.
                     if (last != null) {
-                        HorizontalDivider(Modifier.padding(vertical = 10.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CardImage(
-                                url = last.card.imageSmall ?: last.card.imageLarge,
-                                contentDescription = last.card.name,
-                                modifier = Modifier
-                                    .width(44.dp)
-                                    .clickable { onOpenCard(last.card) }
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = last.card.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = listOfNotNull(
-                                        last.card.setName,
-                                        last.card.collectorNumber?.let { "#$it" }
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                val price = last.card.primaryPrice(currency)
-                                Text(
-                                    text = (price?.let { formatPrice(it.amount, it.currency) }
-                                        ?: "kein Preis") +
-                                        if (last.quantity > 1) "  ·  ${last.quantity}×" else "",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                            IconButton(onClick = { viewModel.undoLast() }) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Undo,
-                                    contentDescription = "Letzte Erfassung zurücknehmen"
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
+                        HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "${viewModel.sessionCount()} Karten · ≈ " +
+                                text = "${viewModel.sessionCount()} Karten · " +
                                     formatPrice(viewModel.sessionTotal(currency), currency),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.secondary,
@@ -513,11 +514,20 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            IconButton(onClick = { viewModel.undoLast() }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = "Letzte Erfassung zurücknehmen"
+                                )
+                            }
                             TextButton(onClick = { viewModel.showSessionSheet.value = true }) {
                                 Text("Liste")
                             }
-                            Button(onClick = { viewModel.commitSession() }) {
-                                Text("Übernehmen")
+                            Button(
+                                onClick = { viewModel.commitSession() },
+                                enabled = viewModel.canCommitSession()
+                            ) {
+                                Text(if (viewModel.canCommitSession()) "Speichern" else "Prüfen")
                             }
                         }
                     }
@@ -536,16 +546,21 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
         ) {
             Column(Modifier.padding(bottom = 24.dp)) {
                 Text(
-                    text = "Welche Version ist es?",
+                    text = "Treffer kurz prüfen",
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
                 Text(
-                    text = "Erkannt: \"${confirm.label}\" – tippe die passende Karte, " +
-                        "sie wandert in den Stapel.",
+                    text = confirm.reason,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp)
+                )
+                Text(
+                    text = "Gelesen: ${confirm.label} · ${confirm.cards.size} mögliche Treffer",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
                 Spacer(Modifier.height(12.dp))
                 LazyRow(
@@ -582,6 +597,18 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            Text(
+                                text = listOfNotNull(
+                                    card.game.shortLabel,
+                                    card.setCode?.uppercase(),
+                                    card.collectorNumber?.let { "#$it" },
+                                    card.rarity
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             PriceTag(card, currency)
                         }
                     }
@@ -604,110 +631,151 @@ fun ScannerScreen(onOpenCard: (TcgCard) -> Unit) {
             onDismissRequest = { viewModel.showSessionSheet.value = false },
             sheetState = sessionSheet
         ) {
-            Column(Modifier.padding(bottom = 24.dp)) {
-                Text(
-                    text = "Gescannte Karten (${viewModel.sessionCount()})",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                Text(
-                    text = "Gesamtwert ≈ ${formatPrice(viewModel.sessionTotal(currency), currency)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 400.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(session) { index, entry ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    MaterialTheme.shapes.medium
+            // One scroll container for header, cards and actions. Nested fixed
+            // heights made previews and the save button disappear on shorter
+            // screens once a session contained several cards.
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Column(Modifier.padding(horizontal = 4.dp)) {
+                        Text(
+                            text = "Gescannte Karten (${viewModel.sessionCount()})",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = "Gesamtwert ≈ ${formatPrice(viewModel.sessionTotal(currency), currency)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                itemsIndexed(session) { index, entry ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.shapes.medium
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CardImage(
+                                url = entry.card.imageSmall ?: entry.card.imageLarge,
+                                contentDescription = entry.card.name,
+                                modifier = Modifier
+                                    .width(42.dp)
+                                    .clickable { onOpenCard(entry.card) }
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    entry.card.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                .padding(8.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CardImage(
-                                    url = entry.card.imageSmall ?: entry.card.imageLarge,
-                                    contentDescription = entry.card.name,
-                                    modifier = Modifier
-                                        .width(42.dp)
-                                        .clickable { onOpenCard(entry.card) }
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f)) {
+                                entry.card.setName?.let {
                                     Text(
-                                        entry.card.name,
-                                        style = MaterialTheme.typography.titleSmall,
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    entry.card.setName?.let {
-                                        Text(
-                                            it,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                IconButton(onClick = {
-                                    viewModel.setQuantity(index, entry.quantity - 1)
-                                }) {
-                                    Icon(Icons.Filled.Remove, contentDescription = "Weniger")
-                                }
-                                Text("${entry.quantity}", style = MaterialTheme.typography.titleSmall)
-                                IconButton(onClick = {
-                                    viewModel.setQuantity(index, entry.quantity + 1)
-                                }) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Mehr")
                                 }
                             }
-                            // Varianten-Schnelleinstellung: Foil + Zustand
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
+                            IconButton(onClick = {
+                                viewModel.setQuantity(index, entry.quantity - 1)
+                            }) {
+                                Icon(Icons.Filled.Remove, contentDescription = "Weniger")
+                            }
+                            Text("${entry.quantity}", style = MaterialTheme.typography.titleSmall)
+                            IconButton(onClick = {
+                                viewModel.setQuantity(index, entry.quantity + 1)
+                            }) {
+                                Icon(Icons.Filled.Add, contentDescription = "Mehr")
+                            }
+                        }
+                        Text(
+                            if (entry.finish == null) "Finish bestätigen" else "Finish",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (entry.finish == null) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(finishesFor(entry.card.game)) { (code, label) ->
                                 FilterChip(
-                                    selected = entry.foil,
-                                    onClick = { viewModel.toggleFoil(index) },
-                                    label = { Text("Foil ✦") }
+                                    selected = entry.finish == code,
+                                    onClick = { viewModel.setFinish(index, code) },
+                                    label = { Text(label) }
                                 )
-                                listOf("NM", "EX", "GD", "PL").forEach { code ->
-                                    FilterChip(
-                                        selected = entry.condition == code,
-                                        onClick = { viewModel.setCondition(index, code) },
-                                        label = { Text(code) }
-                                    )
-                                }
+                            }
+                        }
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(listOf("NM", "EX", "GD", "PL")) { code ->
+                                FilterChip(
+                                    selected = entry.condition == code,
+                                    onClick = { viewModel.setCondition(index, code) },
+                                    label = { Text(code) }
+                                )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { viewModel.commitSession() },
-                    enabled = session.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                ) {
-                    Text("Alle ${viewModel.sessionCount()} zur Sammlung hinzufügen")
+                item {
+                    Button(
+                        onClick = { viewModel.commitSession() },
+                        enabled = viewModel.canCommitSession(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (viewModel.canCommitSession()) {
+                                "Alle ${viewModel.sessionCount()} zur Sammlung hinzufügen"
+                            } else {
+                                "Zuerst Finish jeder Karte bestätigen"
+                            }
+                        )
+                    }
                 }
-                TextButton(
-                    onClick = { viewModel.clearSession() },
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                ) {
-                    Text("Session verwerfen")
+                item {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = { viewModel.clearSession() }) {
+                            Text("Session verwerfen")
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+private fun scannerInstruction(game: TcgGame?): String = when (game) {
+    TcgGame.MAGIC -> "Unterkante scharf halten: Setcode · Sammlernummer · Sprache."
+    TcgGame.POKEMON -> "Unterkante scharf halten: Setcode + Nummer/Setgröße."
+    TcgGame.YUGIOH -> "Set-Code unter dem Artwork und 8-stelligen Passcode lesbar halten."
+    TcgGame.ONEPIECE -> "Kartennummer wird gelesen; Parallel-Art wird zusätzlich per Bild geprüft."
+    TcgGame.LORCANA -> "Unterkante scharf halten: Nummer · Sprache · Set."
+    TcgGame.STARWARS -> "Unterkante scharf halten: Setcode + Variantennummer."
+    TcgGame.DRAGONBALL -> "Kartencode und ★-Markierung sichtbar halten."
+    TcgGame.RIFTBOUND -> "Unterkante scharf halten: Set + Nummer/Total + Variantensuffix."
+    null -> "Setcode, Sammlernummer, Name und Artwork werden gemeinsam geprüft."
+}
+
+private fun finishesFor(game: TcgGame): List<Pair<String, String>> = when (game) {
+    TcgGame.POKEMON -> listOf(
+        "normal" to "Normal",
+        "foil" to "Holofoil ✦",
+        "reverse_holo" to "Reverse Holo"
+    )
+    TcgGame.MAGIC -> listOf(
+        "normal" to "Normal",
+        "foil" to "Foil ✦",
+        "etched" to "Etched",
+        "textured" to "Textured"
+    )
+    else -> listOf("normal" to "Normal", "foil" to "Foil ✦", "other" to "Spezial")
 }

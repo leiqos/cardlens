@@ -37,6 +37,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -100,11 +101,13 @@ class DetailViewModel(
     private val favoriteDao: FavoriteDao,
     private val json: Json,
     val settings: SettingsStore,
+    private val cardId: String,
     initialCard: TcgCard?
 ) : ViewModel() {
 
     /** Aktuell angezeigter Druck — wechselbar ueber die Editions-Auswahl. */
     val card = MutableStateFlow(initialCard)
+    val restoring = MutableStateFlow(initialCard == null)
 
     /** Alle Drucke derselben Karte (aktuell fuer Magic & Yu-Gi-Oh!). */
     val printings = MutableStateFlow<List<TcgCard>>(emptyList())
@@ -134,8 +137,32 @@ class DetailViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
-        val c = initialCard
-        when (c?.game) {
+        if (initialCard != null) {
+            loadCardExtras(initialCard)
+        } else {
+            // Navigation stores only the stable card ID. If Android restores a
+            // detail route after process death, rebuild the card from the full
+            // offline snapshot saved with collection/wishlist entries.
+            viewModelScope.launch {
+                val entry = dao.byCard(cardId, wishlist = false).firstOrNull()
+                    ?: dao.byCard(cardId, wishlist = true).firstOrNull()
+                val savedJson = entry?.cardJson
+                    ?: deckDao.usagesOf(cardId).firstOrNull()?.cardJson
+                val restored = savedJson?.let { raw ->
+                    runCatching { json.decodeFromString(TcgCard.serializer(), raw) }.getOrNull()
+                }
+                if (restored != null) {
+                    repository.remember(restored)
+                    card.value = restored
+                    loadCardExtras(restored)
+                }
+                restoring.value = false
+            }
+        }
+    }
+
+    private fun loadCardExtras(c: TcgCard) {
+        when (c.game) {
             TcgGame.MAGIC -> viewModelScope.launch {
                 printings.value = runCatching { repository.magicPrintings(c.name) }
                     .getOrDefault(emptyList())
@@ -260,10 +287,12 @@ fun CardDetailScreen(cardId: String, onBack: () -> Unit) {
             app.container.favoriteDao,
             app.container.cardJson,
             app.container.settings,
+            cardId,
             app.container.repository.cached(cardId)
         )
     }
     val card by viewModel.card.collectAsState()
+    val restoring by viewModel.restoring.collectAsState()
     var showDeckPicker by remember { mutableStateOf(false) }
 
     fun openUrl(url: String) {
@@ -320,11 +349,15 @@ fun CardDetailScreen(cardId: String, onBack: () -> Unit) {
         val c = card
         if (c == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                EmptyState(
-                    icon = Icons.AutoMirrored.Filled.HelpOutline,
-                    title = "Karte nicht gefunden",
-                    body = "Bitte erneut suchen oder scannen."
-                )
+                if (restoring) {
+                    CircularProgressIndicator()
+                } else {
+                    EmptyState(
+                        icon = Icons.AutoMirrored.Filled.HelpOutline,
+                        title = "Karte nicht gefunden",
+                        body = "Der gespeicherte Karteneintrag ist unvollständig."
+                    )
+                }
             }
             return@Scaffold
         }

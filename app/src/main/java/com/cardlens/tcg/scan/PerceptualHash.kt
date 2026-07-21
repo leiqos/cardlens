@@ -24,11 +24,18 @@ object PerceptualHash {
         val aHash: Long,
         val artDHash: Long,
         val artAHash: Long,
+        val titleDHash: Long,
+        val footerDHash: Long,
+        val footerAHash: Long,
+        val artRedHash: Long,
+        val artGreenHash: Long,
+        val artBlueHash: Long,
         /** Mittlere Helligkeit 0..255 — Grundlage des Schwachlicht-Hinweises. */
         val meanLuma: Int
     )
 
     private data class Hashes(val d: Long, val a: Long, val meanLuma: Int)
+    private data class ColorHashes(val red: Long, val green: Long, val blue: Long)
 
     private fun luminance(pixel: Int): Int {
         val r = (pixel shr 16) and 0xFF
@@ -69,6 +76,32 @@ object PerceptualHash {
         return Hashes(dHash, aHash, (sum / 64).toInt())
     }
 
+    /** Per-channel average hashes retain artwork palette while tolerating exposure shifts. */
+    private fun colorHashes(bitmap: Bitmap): ColorHashes {
+        val scaled = Bitmap.createScaledBitmap(bitmap, 8, 8, true)
+        val px = IntArray(64)
+        scaled.getPixels(px, 0, 8, 0, 0, 8, 8)
+        if (scaled != bitmap) scaled.recycle()
+        val meanR = px.sumOf { (it shr 16) and 0xFF } / 64.0
+        val meanG = px.sumOf { (it shr 8) and 0xFF } / 64.0
+        val meanB = px.sumOf { it and 0xFF } / 64.0
+        var r = 0L; var g = 0L; var b = 0L
+        px.forEachIndexed { index, pixel ->
+            if (((pixel shr 16) and 0xFF) > meanR) r = r or (1L shl index)
+            if (((pixel shr 8) and 0xFF) > meanG) g = g or (1L shl index)
+            if ((pixel and 0xFF) > meanB) b = b or (1L shl index)
+        }
+        return ColorHashes(r, g, b)
+    }
+
+    private fun crop(bitmap: Bitmap, left: Float, top: Float, right: Float, bottom: Float): Bitmap {
+        val x = (bitmap.width * left).toInt().coerceIn(0, bitmap.width - 1)
+        val y = (bitmap.height * top).toInt().coerceIn(0, bitmap.height - 1)
+        val w = (bitmap.width * (right - left)).toInt().coerceIn(1, bitmap.width - x)
+        val h = (bitmap.height * (bottom - top)).toInt().coerceIn(1, bitmap.height - y)
+        return Bitmap.createBitmap(bitmap, x, y, w, h)
+    }
+
     /**
      * Fingerabdruck eines Kartenbilds (Kamera-Ausschnitt oder API-Scan).
      * Wichtig: Kamera- und Kandidatenbild durchlaufen dieselbe Geometrie,
@@ -81,21 +114,26 @@ object PerceptualHash {
         // unterstuetzten TCGs das Bildfenster ab und meidet Rand und Textbox.
         val w = bitmap.width
         val h = bitmap.height
-        val art = if (w >= 16 && h >= 16) {
-            Bitmap.createBitmap(
-                bitmap,
-                (w * 0.08f).toInt(),
-                (h * 0.10f).toInt(),
-                (w * 0.84f).toInt().coerceAtLeast(1),
-                (h * 0.48f).toInt().coerceAtLeast(1)
-            )
-        } else {
-            bitmap
-        }
+        val art = if (w >= 16 && h >= 16) crop(bitmap, 0.08f, 0.10f, 0.92f, 0.58f) else bitmap
         val artHashes = hashes(art)
+        val artColors = colorHashes(art)
         if (art != bitmap) art.recycle()
 
-        return Fingerprint(whole.d, whole.a, artHashes.d, artHashes.a, whole.meanLuma)
+        val title = if (w >= 16 && h >= 16) crop(bitmap, 0.04f, 0.03f, 0.96f, 0.24f) else bitmap
+        val titleHashes = hashes(title)
+        if (title != bitmap) title.recycle()
+        val footer = if (w >= 16 && h >= 16) crop(bitmap, 0.02f, 0.76f, 0.98f, 0.99f) else bitmap
+        val footerHashes = hashes(footer)
+        if (footer != bitmap) footer.recycle()
+
+        return Fingerprint(
+            whole.d, whole.a,
+            artHashes.d, artHashes.a,
+            titleHashes.d,
+            footerHashes.d, footerHashes.a,
+            artColors.red, artColors.green, artColors.blue,
+            whole.meanLuma
+        )
     }
 
     fun hamming(a: Long, b: Long): Int = java.lang.Long.bitCount(a xor b)
@@ -106,9 +144,19 @@ object PerceptualHash {
      * traegt genauso stark bei wie die ganze Karte — dort unterscheiden sich
      * Editionen tatsaechlich.
      */
-    fun distance(a: Fingerprint, b: Fingerprint): Int =
-        hamming(a.dHash, b.dHash) * 2 +
+    fun distance(a: Fingerprint, b: Fingerprint): Int {
+        // Raw maximum 832; scale back to the historic 0..384 range so the
+        // calibrated confidence thresholds retain their meaning.
+        val raw = hamming(a.dHash, b.dHash) +
             hamming(a.aHash, b.aHash) +
-            hamming(a.artDHash, b.artDHash) * 2 +
-            hamming(a.artAHash, b.artAHash)
+            hamming(a.artDHash, b.artDHash) * 3 +
+            hamming(a.artAHash, b.artAHash) +
+            hamming(a.titleDHash, b.titleDHash) +
+            hamming(a.footerDHash, b.footerDHash) * 2 +
+            hamming(a.footerAHash, b.footerAHash) +
+            hamming(a.artRedHash, b.artRedHash) +
+            hamming(a.artGreenHash, b.artGreenHash) +
+            hamming(a.artBlueHash, b.artBlueHash)
+        return (raw * 384 + 416) / 832
+    }
 }

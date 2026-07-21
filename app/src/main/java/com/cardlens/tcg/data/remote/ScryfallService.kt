@@ -26,6 +26,14 @@ interface ScryfallService {
         @Path("number") number: String
     ): ScryfallCard
 
+    /** Same exact printing in the language printed in the footer. */
+    @GET("cards/{setCode}/{number}/{language}")
+    suspend fun byCollectorLanguage(
+        @Path("setCode") setCode: String,
+        @Path("number") number: String,
+        @Path("language") language: String
+    ): ScryfallCard
+
     /** Einzelne Karte per Scryfall-UUID (CSV-Import). */
     @GET("cards/{id}")
     suspend fun byId(@Path("id") id: String): ScryfallCard
@@ -101,6 +109,7 @@ data class ScryfallCard(
     val id: String,
     @SerialName("oracle_id") val oracleId: String? = null,
     val name: String,
+    val lang: String? = null,
     @SerialName("set_name") val setName: String? = null,
     @SerialName("set") val setCode: String? = null,
     @SerialName("collector_number") val collectorNumber: String? = null,

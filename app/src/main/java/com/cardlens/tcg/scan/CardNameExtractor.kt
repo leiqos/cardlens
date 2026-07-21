@@ -69,13 +69,13 @@ object CardNameExtractor {
             .filter { it.boundingBox!!.top >= imageHeight * NUMBER_ZONE_TOP }
             .sortedBy { it.boundingBox!!.top }
             .map { it.text }
-        val identifiers = CardIdentifierDetector.detect(lineTexts, numberZone)
         val gameHint = GameClassifier.classify(lineTexts)
+        val identifiers = CardIdentifierDetector.detect(lineTexts, numberZone, gameHint)
 
         val name = if (lines.size in 2..MAX_LINES_FOR_NAME) {
             val minLineHeight = imageHeight * 0.025f
             lines
-                .mapNotNull { line -> score(line, imageHeight, minLineHeight) }
+                .mapNotNull { line -> score(line, imageHeight, minLineHeight, gameHint) }
                 .maxByOrNull { it.second }
                 ?.first
         } else {
@@ -85,20 +85,42 @@ object CardNameExtractor {
         return ScanReading(name, identifiers, lines.size, gameHint)
     }
 
-    private fun score(line: Text.Line, imageHeight: Int, minLineHeight: Float): Pair<String, Float>? {
+    private fun score(
+        line: Text.Line,
+        imageHeight: Int,
+        minLineHeight: Float,
+        gameHint: TcgGame?
+    ): Pair<String, Float>? {
         val box = line.boundingBox ?: return null
         if (box.height() < minLineHeight) return null
         val topRatio = box.top.toFloat() / imageHeight
 
         // Kartenrelative Namenszonen; die Mitte (Faehigkeitstext) faellt raus.
-        val zoneWeight = when {
-            topRatio <= 0.22f -> 1.6f - topRatio
-            topRatio in 0.48f..0.70f -> 0.7f
-            topRatio in 0.72f..0.93f -> 0.8f
-            else -> return null
+        val zoneWeight = when (gameHint) {
+            TcgGame.LORCANA -> if (topRatio in 0.43f..0.70f) 1.15f else return null
+            TcgGame.ONEPIECE -> when {
+                topRatio <= 0.25f -> 1.15f
+                topRatio in 0.68f..0.91f -> 1f
+                else -> return null
+            }
+            null -> when {
+                topRatio <= 0.22f -> 1.6f - topRatio
+                topRatio in 0.48f..0.70f -> 0.7f
+                topRatio in 0.72f..0.93f -> 0.8f
+                else -> return null
+            }
+            else -> if (topRatio <= 0.25f) 1.6f - topRatio else return null
         }
 
         val cleaned = clean(line.text) ?: return null
+        if (cleaned.contains(Regex(
+                """copyright|©|wizards|konami|disney|lucasfilm|bandai|carddass|riot games|illustrated by|illus\.""",
+                RegexOption.IGNORE_CASE
+            ))) return null
+        if (cleaned.matches(Regex(
+                """[A-Z0-9]{2,6}\s*-\s*[A-Z0-9]{3,6}""",
+                RegexOption.IGNORE_CASE
+            ))) return null
         val letters = cleaned.count { it.isLetter() }
         if (letters < 3 || letters < cleaned.length * 0.6) return null
         if (cleaned.uppercase() in stopWords) return null

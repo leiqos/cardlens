@@ -53,6 +53,7 @@ data class RiftboundCard(
     val name: String,
     @SerialName("set_id") val setId: String? = null,
     @SerialName("collector_number") val collectorNumber: Int? = null,
+    val variant: String? = null,
     val rarity: String? = null,
     val faction: String? = null,
     val type: String? = null,
@@ -94,9 +95,12 @@ fun RiftboundCard.toTcgCard(): TcgCard {
         name = name,
         subtitle = listOfNotNull(type, faction?.replaceFirstChar(Char::uppercase))
             .joinToString(" · ").takeIf { it.isNotBlank() },
-        setName = listOfNotNull(setId, collectorNumber?.toString()).joinToString(" · ").takeIf { it.isNotBlank() },
+        setName = listOfNotNull(
+            setId,
+            collectorNumber?.let { "$it${variant.orEmpty()}" }
+        ).joinToString(" · ").takeIf { it.isNotBlank() },
         setCode = setId,
-        collectorNumber = collectorNumber?.toString(),
+        collectorNumber = collectorNumber?.let { "$it${variant.orEmpty()}" },
         rarity = rarity,
         imageSmall = image,
         imageLarge = image,

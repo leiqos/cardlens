@@ -48,11 +48,34 @@ class CardRepository(
     suspend fun resolve(identifier: CardIdentifier): List<TcgCard> {
         val cards = try {
             when (identifier) {
-                is CardIdentifier.Magic ->
-                    listOf(scryfall.byCollector(identifier.setCode.lowercase(), identifier.number).toTcgCard())
-                is CardIdentifier.Pokemon ->
-                    pokemon.search("number:${identifier.number} set.printedTotal:${identifier.printedTotal}")
+                is CardIdentifier.Magic -> {
+                    val scryfallLanguage = identifier.language?.let { language ->
+                        when (language.uppercase()) {
+                            "JP" -> "ja"
+                            // Scryfall separates Simplified/Traditional Chinese;
+                            // a generic OCR "ZH" cannot safely choose one.
+                            "ZH" -> null
+                            else -> language.lowercase()
+                        }
+                    }
+                    listOf(
+                        scryfallLanguage?.let { language ->
+                            scryfall.byCollectorLanguage(
+                                identifier.setCode.lowercase(),
+                                identifier.number,
+                                language.lowercase()
+                            )
+                        } ?: scryfall.byCollector(
+                            identifier.setCode.lowercase(), identifier.number
+                        )
+                    ).map { it.toTcgCard() }
+                }
+                is CardIdentifier.Pokemon -> {
+                    val setFilter = identifier.setCode?.let { " set.ptcgoCode:${it.uppercase()}" }
+                        ?: " set.printedTotal:${identifier.printedTotal}"
+                    pokemon.search("number:${identifier.number}$setFilter")
                         .data.map { it.toTcgCard() }
+                }
                 is CardIdentifier.YugiohPasscode ->
                     ygo.byPasscode(identifier.passcode).data.map { it.toTcgCard() }
                 is CardIdentifier.YugiohSet -> {
@@ -78,6 +101,17 @@ class CardRepository(
                     listOf(swu.byNumber(identifier.setCode.uppercase(), identifier.number).toTcgCard())
                 is CardIdentifier.DragonBall ->
                     dragonBall.byCode(identifier.code).all.mapNotNull { it.toTcgCard() }
+                is CardIdentifier.Riftbound -> {
+                    val cardId = buildString {
+                        append(identifier.setCode.lowercase())
+                        append('-')
+                        append(identifier.number.padStart(3, '0'))
+                        append(identifier.variant.orEmpty())
+                        append('-')
+                        append(identifier.printedTotal.padStart(3, '0'))
+                    }
+                    listOfNotNull(riftbound.byId(cardId).toTcgCard())
+                }
             }
         } catch (e: HttpException) {
             // 401/403/422: apitcg ohne Key bzw. Parameter ausserhalb des Bereichs.

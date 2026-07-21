@@ -53,6 +53,11 @@ class GameClassifierTest {
     }
 
     @Test
+    fun `pokemon hp alone is a structurally safe game signal`() {
+        assertEquals(TcgGame.POKEMON, classify("Charizard ex", "HP 330", "OBF EN", "125/197"))
+    }
+
+    @Test
     fun `yugioh karte mit atk def`() {
         assertEquals(
             TcgGame.YUGIOH,
@@ -96,5 +101,23 @@ class GameClassifierTest {
     fun `unklare eingabe liefert null`() {
         assertNull(classify("irgendein Text", "ohne Merkmale"))
         assertNull(classify())
+    }
+
+    @Test
+    fun `generische tcg woerter erzwingen kein spiel`() {
+        assertNull(classify("Leader", "Stage", "Unlimited", "Energy"))
+    }
+
+    @Test
+    fun `widerspruechliche starke signale bleiben unklar`() {
+        // A playmat/package can show several logos at once. A scanner must not
+        // turn that into a confident card classification.
+        assertNull(classify("KONAMI", "© Disney", "Leader"))
+    }
+
+    @Test
+    fun `riftbound braucht marke oder kombiniertes layout signal`() {
+        assertEquals(TcgGame.RIFTBOUND, classify("RIFTBOUND", "Riot Games"))
+        assertNull(classify("Energy", "Unit"))
     }
 }

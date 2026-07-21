@@ -250,6 +250,7 @@ class CollectionViewModel(
                     condition = row.condition,
                     language = row.language,
                     foil = row.foil,
+                    finish = row.finish,
                     binderId = null
                 )
                 dao.upsert(
@@ -270,6 +271,7 @@ class CollectionViewModel(
                             condition = row.condition,
                             language = row.language,
                             foil = row.foil,
+                            finish = row.finish,
                             altered = row.altered,
                             misprint = row.misprint,
                             purchasePrice = row.purchasePrice,

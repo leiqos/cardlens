@@ -1,6 +1,7 @@
 package com.cardlens.tcg.ui.decks
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -65,7 +67,21 @@ fun DecksScreen(onOpenDeck: (Long) -> Unit) {
     var deleteCandidate by remember { mutableStateOf<DeckSummary?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Decks") }) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            "BUILD & PLAY",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text("Decks", style = MaterialTheme.typography.headlineSmall)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showCreate = true },
@@ -141,6 +157,11 @@ private fun DeckRow(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.large)
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                MaterialTheme.shapes.large
+            )
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

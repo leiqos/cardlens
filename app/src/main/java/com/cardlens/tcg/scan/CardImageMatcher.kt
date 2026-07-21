@@ -28,6 +28,7 @@ class CardImageMatcher(private val http: OkHttpClient) {
     data class Ranked(
         val cards: List<TcgCard>,
         val bestDistance: Int,
+        val runnerUpDistance: Int,
         /** Vertrauen 0..1: hoher Wert = klarer visueller Treffer. */
         val confidence: Float
     )
@@ -42,11 +43,15 @@ class CardImageMatcher(private val http: OkHttpClient) {
         target: PerceptualHash.Fingerprint,
         candidates: List<TcgCard>
     ): Ranked = coroutineScope {
-        if (candidates.isEmpty()) return@coroutineScope Ranked(candidates, Int.MAX_VALUE, 0f)
+        if (candidates.isEmpty()) {
+            return@coroutineScope Ranked(candidates, Int.MAX_VALUE, Int.MAX_VALUE, 0f)
+        }
 
         val scored = candidates.map { card ->
             async(Dispatchers.IO) {
-                val url = card.imageSmall ?: card.imageLarge
+                // Variant discrimination depends on footer/frame detail; use
+                // the largest catalogue image whenever one exists.
+                val url = card.imageLarge ?: card.imageSmall
                 val fp = url?.let { fingerprintOf(it) }
                 val dist = if (fp != null) PerceptualHash.distance(target, fp) else Int.MAX_VALUE
                 card to dist
@@ -55,17 +60,9 @@ class CardImageMatcher(private val http: OkHttpClient) {
 
         val best = scored.first().second
         val second = scored.getOrNull(1)?.second ?: Int.MAX_VALUE
-        // Vertrauen: kleiner Abstand (Skala 0..384) + Vorsprung vor Platz 2.
-        // Bei nur einem Kandidaten zaehlt allein die absolute Distanz —
-        // damit dient der Wert auch als Bestaetigung eines Einzeltreffers.
-        val confidence = when {
-            best == Int.MAX_VALUE -> 0f
-            best <= 56 && (second - best) >= 24 -> 1f
-            best <= 88 -> 0.75f
-            best <= 128 -> 0.5f
-            else -> 0.25f
-        }
-        Ranked(scored.map { it.first }, best, confidence)
+        val compared = scored.count { it.second != Int.MAX_VALUE }
+        val confidence = VisualMatchConfidence.score(best, second, compared)
+        Ranked(scored.map { it.first }, best, second, confidence)
     }
 
     private suspend fun fingerprintOf(url: String): PerceptualHash.Fingerprint? {
@@ -84,6 +81,29 @@ class CardImageMatcher(private val http: OkHttpClient) {
                     }
                 }
             }.getOrNull()
+        }
+    }
+}
+
+/** Pure, unit-testable calibration for visual ranking confidence. */
+internal object VisualMatchConfidence {
+    fun score(best: Int, second: Int, compared: Int): Float {
+        if (best == Int.MAX_VALUE || compared <= 0) return 0f
+        if (compared == 1) return when {
+            best <= 58 -> 0.9f
+            best <= 82 -> 0.7f
+            best <= 105 -> 0.45f
+            else -> 0.1f
+        }
+
+        val gap = (second - best).coerceAtLeast(0)
+        return when {
+            best <= 64 && gap >= 28 -> 0.95f
+            best <= 80 && gap >= 18 -> 0.8f
+            best <= 96 && gap >= 12 -> 0.65f
+            best <= 112 && gap >= 8 -> 0.45f
+            best <= 128 -> 0.15f
+            else -> 0f
         }
     }
 }

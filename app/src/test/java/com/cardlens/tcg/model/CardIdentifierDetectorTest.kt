@@ -19,13 +19,13 @@ class CardIdentifierDetectorTest {
     @Test
     fun `magic set code mit sprache und sammlernummer`() {
         val ids = detect("MID • EN", "123/281 M")
-        assertTrue(CardIdentifier.Magic("MID", "123") in ids)
+        assertTrue(CardIdentifier.Magic("MID", "123", "EN") in ids)
     }
 
     @Test
     fun `magic moderne vierstellige sammlernummer`() {
         val ids = detect("BLB · DE", "0123/0281 R")
-        assertTrue(CardIdentifier.Magic("BLB", "123") in ids)
+        assertTrue(CardIdentifier.Magic("BLB", "123", "DE") in ids)
     }
 
     @Test
@@ -132,7 +132,7 @@ class CardIdentifierDetectorTest {
             lines = listOf("Trading Post", "4", "Artifact", "0329", "LTC • EN"),
             numberZone = listOf("0329", "LTC • EN")
         )
-        assertTrue(CardIdentifier.Magic("LTC", "329") in ids)
+        assertTrue(CardIdentifier.Magic("LTC", "329", "EN") in ids)
         assertFalse(ids.any { it is CardIdentifier.Magic && it.number == "4" })
     }
 
@@ -140,7 +140,7 @@ class CardIdentifierDetectorTest {
     fun `kampfwerte in der nummern-zone sind keine sammlernummer`() {
         // Kreatur: P/T "3/3" steht knapp ueber der Sammlernummer "0329".
         val ids = detect("LTC • EN", "3/3", "0329")
-        assertTrue(CardIdentifier.Magic("LTC", "329") in ids)
+        assertTrue(CardIdentifier.Magic("LTC", "329", "EN") in ids)
         assertFalse(ids.any { it is CardIdentifier.Magic && it.number == "3" })
     }
 
@@ -149,13 +149,13 @@ class CardIdentifierDetectorTest {
         // "20/20"-Kampfwerte ueber der echten Sammlernummer "123/281":
         // der untere Treffer ist die gedruckte Nummer.
         val ids = detect("MID • EN", "20/20", "123/281")
-        assertTrue(CardIdentifier.Magic("MID", "123") in ids)
+        assertTrue(CardIdentifier.Magic("MID", "123", "EN") in ids)
     }
 
     @Test
     fun `ohne nummern-zone bleibt das verhalten unveraendert`() {
         val ids = CardIdentifierDetector.detect(listOf("MID • EN", "123/281 M"))
-        assertTrue(CardIdentifier.Magic("MID", "123") in ids)
+        assertTrue(CardIdentifier.Magic("MID", "123", "EN") in ids)
     }
 
     // ---- Reihenfolge / Robustheit --------------------------------------------------
@@ -170,5 +170,62 @@ class CardIdentifierDetectorTest {
     fun `leere eingabe liefert nichts`() {
         assertTrue(detect().isEmpty())
         assertTrue(detect("Blitzableiter", "Kreatur – Elementar").isEmpty())
+    }
+
+    @Test
+    fun `shared numbers are not treated as exact collectible printings`() {
+        assertFalse(CardIdentifier.OnePiece("OP01-025").identifiesPrinting)
+        assertFalse(CardIdentifier.DragonBall("FB01-001").identifiesPrinting)
+        assertFalse(CardIdentifier.YugiohPasscode("89631139").identifiesPrinting)
+        assertTrue(CardIdentifier.Magic("MID", "123").identifiesPrinting)
+        assertTrue(CardIdentifier.StarWars("SOR", "123").identifiesPrinting)
+    }
+
+    @Test
+    fun `modern pokemon footer is not misclassified as magic`() {
+        val ids = CardIdentifierDetector.detect(
+            lines = listOf("Charizard ex", "330 HP", "OBF EN", "125/197"),
+            numberZone = listOf("OBF EN", "125/197"),
+            gameHint = TcgGame.POKEMON
+        )
+        assertTrue(CardIdentifier.Pokemon("125", "197", "OBF", "EN") in ids)
+        assertFalse(ids.any { it is CardIdentifier.Magic })
+        assertTrue(ids.filterIsInstance<CardIdentifier.Pokemon>().single().identifiesPrinting)
+    }
+
+    @Test
+    fun `same footer is magic only with magic context`() {
+        val ids = CardIdentifierDetector.detect(
+            lines = listOf("Creature — Dragon", "WOE EN", "0123/0266"),
+            numberZone = listOf("WOE EN", "0123/0266"),
+            gameHint = TcgGame.MAGIC
+        )
+        assertTrue(CardIdentifier.Magic("WOE", "123", "EN") in ids)
+        assertFalse(ids.any { it is CardIdentifier.Pokemon })
+    }
+
+    @Test
+    fun `new star wars sets work without app update when game is known`() {
+        val ids = CardIdentifierDetector.detect(
+            listOf("STAR WARS", "LAW", "011/260"),
+            listOf("LAW", "011/260"),
+            TcgGame.STARWARS
+        )
+        assertTrue(CardIdentifier.StarWars("LAW", "11") in ids)
+    }
+
+    @Test
+    fun `riftbound variant suffix selects exact showcase printing`() {
+        val ids = CardIdentifierDetector.detect(
+            listOf("RIFTBOUND", "OGN 202a/298"),
+            listOf("OGN 202a/298"),
+            TcgGame.RIFTBOUND
+        )
+        assertTrue(CardIdentifier.Riftbound("OGN", "202", "298", "a") in ids)
+    }
+
+    @Test
+    fun `dragon ball parallel stars are preserved`() {
+        assertTrue(CardIdentifier.DragonBall("FB01-001", 2) in detect("FB01-001★★"))
     }
 }

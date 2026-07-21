@@ -29,10 +29,12 @@ data class PokemonList(val data: List<PokemonCard> = emptyList())
 
 @Serializable
 data class PokemonSet(
+    val id: String? = null,
     val name: String? = null,
     val series: String? = null,
     val releaseDate: String? = null,
-    val printedTotal: Int? = null
+    val printedTotal: Int? = null,
+    val ptcgoCode: String? = null
 )
 
 @Serializable
@@ -121,6 +123,7 @@ fun PokemonCard.toTcgCard(): TcgCard {
         setName = listOfNotNull(set?.name, number?.let { n ->
             set?.printedTotal?.let { "$n/$it" } ?: n
         }).joinToString(" · ").takeIf { it.isNotBlank() },
+        setCode = set?.ptcgoCode ?: set?.id,
         collectorNumber = number,
         rarity = rarity,
         artist = artist,

@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import androidx.camera.core.ImageProxy
 import com.cardlens.tcg.model.CardIdentifierDetector
+import com.cardlens.tcg.model.GameClassifier
 import com.cardlens.tcg.model.isStrong
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -128,17 +129,28 @@ class ScanAnalyzer(
             fingerprint
         )
 
+        // Do not OCR the fallback guide rectangle when no physical card was
+        // found. Background packaging, playmats and book pages were the main
+        // source of convincing-but-wrong game and card locks.
+        if (!cardFound) {
+            card.recycle()
+            busy.set(false)
+            return
+        }
+
         // 5. OCR auf dem entzerrten Kartenbild
         var strongIdentifierSeen = false
+        var frameGameHint: com.cardlens.tcg.model.TcgGame? = null
         recognizer.process(InputImage.fromBitmap(card, 0))
             .addOnSuccessListener { text ->
                 val reading = CardNameExtractor.extract(text, card.width, card.height)
+                frameGameHint = reading.gameHint
                 strongIdentifierSeen = reading.identifiers.any { it.isStrong }
                 onReading(reading)
             }
             .addOnCompleteListener {
                 if (!strongIdentifierSeen && needsIdentifierBoost() && !closed) {
-                    zoomPass(card)
+                    zoomPass(card, frameGameHint)
                 } else {
                     card.recycle()
                     busy.set(false)
@@ -150,10 +162,10 @@ class ScanAnalyzer(
      * Kennungs-Zoom: unteres Kartenband (ab 55 % — deckt auch den Yu-Gi-Oh!-
      * Set-Code unterhalb des Artworks ab) auf doppelte Groesse skaliert.
      */
-    private fun zoomPass(card: Bitmap) {
+    private fun zoomPass(card: Bitmap, gameHint: com.cardlens.tcg.model.TcgGame?) {
         val top = (card.height * 0.55f).toInt()
         val band = Bitmap.createBitmap(card, 0, top, card.width, card.height - top)
-        val scaled = Bitmap.createScaledBitmap(band, band.width * 2, band.height * 2, true)
+        val scaled = Bitmap.createScaledBitmap(band, band.width * 3, band.height * 3, true)
         band.recycle()
         // Kontrast strecken: Karten-IDs sind oft Goldfolie auf buntem Artwork
         // (One Piece, Dragon Ball) — mit niedrigem Kontrast liest ML Kit sie
@@ -170,10 +182,11 @@ class ScanAnalyzer(
                 val zoneTop = zoomed.height * 0.51f
                 val identifiers = CardIdentifierDetector.detect(
                     lines.map { it.text },
-                    lines.filter { it.boundingBox!!.top >= zoneTop }.map { it.text }
+                    lines.filter { it.boundingBox!!.top >= zoneTop }.map { it.text },
+                    gameHint ?: GameClassifier.classify(lines.map { it.text })
                 )
                 if (identifiers.isNotEmpty()) {
-                    onReading(ScanReading(null, identifiers, 0))
+                    onReading(ScanReading(null, identifiers, 0, gameHint))
                 }
             }
             .addOnCompleteListener {

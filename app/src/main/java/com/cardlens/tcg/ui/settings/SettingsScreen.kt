@@ -2,6 +2,7 @@ package com.cardlens.tcg.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import com.cardlens.tcg.CardLensApp
 import com.cardlens.tcg.data.ThemeMode
 import com.cardlens.tcg.model.CardCondition
 import com.cardlens.tcg.model.CardLanguage
+import com.cardlens.tcg.ui.components.ScreenHeader
 
 private data class DataSource(val name: String, val games: String, val url: String)
 
@@ -73,7 +75,11 @@ fun SettingsScreen(onOpenTrade: () -> Unit) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Mehr", style = MaterialTheme.typography.headlineSmall)
+        ScreenHeader(
+            eyebrow = "CardLens",
+            title = "Mehr",
+            subtitle = "Werkzeuge und persönliche Standards"
+        )
 
         // Werkzeuge
         SectionCard(title = "Werkzeuge") {
@@ -214,7 +220,7 @@ fun SettingsScreen(onOpenTrade: () -> Unit) {
         }
 
         Text(
-            "CardLens 2.0 · Alle Kartennamen und -bilder gehören den jeweiligen Rechteinhabern. " +
+            "CardLens 3.0.1 · Alle Kartennamen und -bilder gehören den jeweiligen Rechteinhabern. " +
                 "Preise sind Marktdurchschnitte der jeweiligen Quelle.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -227,7 +233,8 @@ fun SettingsScreen(onOpenTrade: () -> Unit) {
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
