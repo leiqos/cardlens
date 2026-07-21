@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-APK-6A4BE8?style=for-the-badge&logo=android&logoColor=white" alt="APK herunterladen"/></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-APK-006B58?style=for-the-badge&logo=android&logoColor=white" alt="APK herunterladen"/></a>
 </p>
 
 <p align="center">
@@ -21,17 +21,13 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 
 ## Screenshots
 
-| Sammlung | Suche | Karten-Detail |
+| Sammlung | Suche | Scanner |
 |:---:|:---:|:---:|
-| ![Sammlung](assets/screenshots/collection.png) | ![Suche](assets/screenshots/search.png) | ![Detail](assets/screenshots/detail.png) |
+| ![Sammlung](assets/screenshots/collection.png) | ![Suche](assets/screenshots/search.png) | ![Scanner](assets/screenshots/scanner.png) |
 
-| Deck | Deck-Statistik | Scanner |
+| Karten-Detail | Decks | Einstellungen |
 |:---:|:---:|:---:|
-| ![Deck](assets/screenshots/deck.png) | ![Statistik](assets/screenshots/deck_stats.png) | ![Scanner](assets/screenshots/scanner.png) |
-
-| Star Wars: Unlimited | Riftbound (LoL) |
-|:---:|:---:|
-| ![Star Wars](assets/screenshots/starwars.png) | ![Riftbound](assets/screenshots/riftbound.png) |
+| ![Detail](assets/screenshots/detail.png) | ![Decks](assets/screenshots/decks.png) | ![Einstellungen](assets/screenshots/settings.png) |
 
 ## Features
 
@@ -55,7 +51,7 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
   OCR-Kartenname **oder** der visuelle Bildabgleich. Dazu kommen
   Plausibilitäts-Checks vor jedem Lookup (Scryfall-Set-Whitelist,
   Nummern-Bereiche) und eine Reparatur typischer OCR-Verwechsler (O↔0, I↔1 …).
-  Eine Kennung muss in mindestens zwei Frames stabil sein; OCR-Name und Nummer
+  Eine Kennung muss in mindestens drei Frames stabil sein; OCR-Name und Nummer
   aus demselben unscharfen Bild gelten bewusst nicht als unabhängige Signale.
 - **Varianten-sicher statt Varianten-raten** – One-Piece-Parallelkarten,
   Dragon-Ball-Alt-Arts, Yu-Gi-Oh!-Reprints und Pokémon-Drucke können dieselbe
@@ -71,8 +67,9 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
   OCR-unabhängig, für **alle** TCGs.
 - **Session-first wie ManaBox** – jede sicher erkannte Karte wandert sofort
   mit Haptik und grünem Blitz in den Session-Stapel, ohne den Scan-Fluss zu
-  unterbrechen: unten im Tray die letzte Karte mit Edition, Preis und
-  Undo, dazu laufender Gesamtwert. Bei mehrdeutigen Treffern öffnet ein
+  unterbrechen. Ein kompaktes Tray zeigt die letzte Karte, den Scan-Status,
+  Undo und den laufenden Gesamtwert, ohne die Kameravorschau abzuschneiden.
+  Bei mehrdeutigen Treffern öffnet ein
   **Editions-Wähler** statt stiller Fehlerfassung. Review-Sheet mit
   Foil-/Zustands-/Mengen-Schnelleinstellung pro Karte, Ein-Klick-Übernahme
   in die Sammlung, Duplikat-Bremse gegen Doppelerfassung.
@@ -118,9 +115,12 @@ Native Android-App mit Kotlin und Jetpack Compose (Material 3).
 - Foil-Einträge werden mit Foil-Preisen bewertet.
 
 ### 🎨 Design
-- Material 3, **Theme-Wahl** (System/Dunkel/Hell) + optional **Material You**,
-  Splash-Screen, Edge-to-Edge, Predictive Back, Haptik beim Scannen.
-- 5 Tabs: Sammlung · Decks · Scannen · Suche · Mehr.
+- Modernes, kamera-zentriertes Material-3-Design mit eigener
+  Mint-/Cyan-/Ink-Farbwelt, ruhiger Typografie und klaren Kartenflächen.
+- **Theme-Wahl** (System/Dunkel/Hell) + optional **Material You**,
+  Edge-to-Edge mit sicheren Systemabständen, Predictive Back und Scan-Haptik.
+- 5 Tabs mit hervorgehobener Scan-Aktion: Sammlung · Decks · Scannen · Suche · Mehr.
+- Maskensicheres adaptives App-Icon für runde, squircle- und herstellerspezifische Launcher.
 
 ### 🌐 Offline-fähig
 - Sammlung, Decks und Favoriten als Room-Snapshots — Details & Preise auch offline.
